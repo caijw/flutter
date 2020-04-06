@@ -181,8 +181,11 @@ class _DefaultBinaryMessenger extends BinaryMessenger {
   // This is static so that this class can have a const constructor.
   static final Map<String, MessageHandler> _mockHandlers =
       <String, MessageHandler>{};
-
+  // [my] 发送消息给 platform
   Future<ByteData> _sendPlatformMessage(String channel, ByteData message) {
+    // print('[my][dart]_sendPlatformMessage');
+    // print(channel);
+    // print(message);
     final Completer<ByteData> completer = Completer<ByteData>();
     // ui.window is accessed directly instead of using ServicesBinding.instance.window
     // because this method might be invoked before any binding is initialized.
@@ -211,9 +214,13 @@ class _DefaultBinaryMessenger extends BinaryMessenger {
     ByteData data,
     ui.PlatformMessageResponseCallback callback,
   ) async {
+    // 对 platform 通过 channel 发送过来的 methodcall 消息进行处理
     ByteData response;
     try {
       final MessageHandler handler = _handlers[channel];
+      // print('[my][dart]handlePlatformMessage');
+      // print(channel);
+      // print(data);
       if (handler != null) {
         response = await handler(data);
       } else {
@@ -244,6 +251,7 @@ class _DefaultBinaryMessenger extends BinaryMessenger {
 
   @override
   void setMessageHandler(String channel, MessageHandler handler) {
+    //  设置 platform 通过某个channel 发送来的 methodcall 的处理函数
     if (handler == null)
       _handlers.remove(channel);
     else
