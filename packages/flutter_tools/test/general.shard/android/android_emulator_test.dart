@@ -7,7 +7,7 @@ import 'dart:async';
 import 'package:file/file.dart';
 import 'package:file/memory.dart';
 import 'package:flutter_tools/src/android/android_sdk.dart'
-  show getEmulatorPath, AndroidSdk, androidSdk;
+  show getEmulatorPath, AndroidSdk;
 import 'package:flutter_tools/src/android/android_emulator.dart';
 import 'package:flutter_tools/src/base/common.dart';
 import 'package:flutter_tools/src/device.dart';
@@ -31,7 +31,7 @@ void main() {
       const String emulatorID = '1234';
       final AndroidEmulator emulator = AndroidEmulator(
         emulatorID,
-        <String, String>{'name': 'test'},
+        const <String, String>{'name': 'test'},
       );
       expect(emulator.id, emulatorID);
       expect(emulator.hasConfig, true);
@@ -130,7 +130,7 @@ void main() {
 
     testUsingContext('succeeds', () async {
       final AndroidEmulator emulator = AndroidEmulator(emulatorID);
-      expect(getEmulatorPath(androidSdk), mockSdk.emulatorPath);
+      expect(getEmulatorPath(mockSdk), mockSdk.emulatorPath);
       final Completer<void> completer = Completer<void>();
       FakeAsync().run((FakeAsync time) {
         unawaited(emulator.launch().whenComplete(completer.complete));

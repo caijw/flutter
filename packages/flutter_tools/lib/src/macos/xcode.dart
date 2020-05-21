@@ -5,7 +5,6 @@
 import 'dart:async';
 
 import 'package:meta/meta.dart';
-import 'package:platform/platform.dart';
 import 'package:process/process.dart';
 
 import '../artifacts.dart';
@@ -13,6 +12,7 @@ import '../base/common.dart';
 import '../base/file_system.dart';
 import '../base/io.dart';
 import '../base/logger.dart';
+import '../base/platform.dart';
 import '../base/process.dart';
 import '../build_info.dart';
 import '../cache.dart';
@@ -435,8 +435,13 @@ class XCDevice {
       } on Exception {
         // Fallback to default iOS architecture. Future-proof against a
         // theoretical version of Xcode that changes this string to something
-        // slightly different like "ARM64".
-        cpuArchitecture ??= defaultIOSArchs.first;
+        // slightly different like "ARM64", or armv7 variations like
+        // armv7s and armv7f.
+        if (architecture.startsWith('armv7')) {
+          cpuArchitecture = DarwinArch.armv7;
+        } else {
+          cpuArchitecture = defaultIOSArchs.first;
+        }
         _logger.printError(
           'Unknown architecture $architecture, defaulting to '
           '${getNameForDarwinArch(cpuArchitecture)}',

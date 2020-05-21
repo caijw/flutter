@@ -21,6 +21,7 @@ Widget buildInputDecorator({
   TextStyle baseStyle,
   TextAlignVertical textAlignVertical,
   VisualDensity visualDensity,
+  bool fixTextFieldOutlineLabel = false,
   Widget child = const Text(
     'text',
     style: TextStyle(fontFamily: 'Ahem', fontSize: 16.0),
@@ -34,6 +35,7 @@ Widget buildInputDecorator({
             data: Theme.of(context).copyWith(
               inputDecorationTheme: inputDecorationTheme,
               visualDensity: visualDensity,
+              fixTextFieldOutlineLabel: fixTextFieldOutlineLabel,
             ),
             child: Align(
               alignment: Alignment.topLeft,
@@ -2241,7 +2243,6 @@ void main() {
             ),
           ),
         );
-
         expect(tester.getSize(find.byType(InputDecorator)), const Size(800.0, kMinInteractiveDimension));
         expect(tester.getTopLeft(find.text('text')).dy, 15.0);
         expect(tester.getBottomLeft(find.text('text')).dy, 31.0);
@@ -2628,6 +2629,79 @@ void main() {
     expect(getBorderWeight(tester), 1.0);
   });
 
+  testWidgets('contentPadding smaller than kMinInteractiveDimension', (WidgetTester tester) async {
+    // Regression test for https://github.com/flutter/flutter/issues/42449
+    const double verticalPadding = 1.0;
+    await tester.pumpWidget(
+      buildInputDecorator(
+        // isEmpty: false (default),
+        // isFocused: false (default)
+        decoration: const InputDecoration(
+          hintText: 'hint',
+          contentPadding: EdgeInsets.symmetric(vertical: verticalPadding),
+          isDense: true,
+        ),
+      ),
+    );
+
+    // The overall height is 18dps. This is shorter than
+    // kMinInteractiveDimension, but because isDense is true, the minimum is
+    // ignored.
+    //   16 - input text (ahem font size 16dps)
+    //    2 - total vertical padding
+
+    expect(tester.getSize(find.byType(InputDecorator)), const Size(800.0, 18.0));
+    expect(tester.getSize(find.text('text')).height, 16.0);
+    expect(tester.getTopLeft(find.text('text')).dy, 1.0);
+    expect(getOpacity(tester, 'hint'), 0.0);
+    expect(getBorderWeight(tester), 1.0);
+
+    await tester.pumpWidget(
+      buildInputDecorator(
+        // isEmpty: false (default),
+        // isFocused: false (default)
+        decoration: const InputDecoration.collapsed(
+          hintText: 'hint',
+          // InputDecoration.collapsed does not support contentPadding
+        ),
+      ),
+    );
+
+    // The overall height is 16dps. This is shorter than
+    // kMinInteractiveDimension, but because isCollapsed is true, the minimum is
+    // ignored. There is no padding at all, because isCollapsed doesn't support
+    // contentPadding.
+    //   16 - input text (ahem font size 16dps)
+
+    expect(tester.getSize(find.byType(InputDecorator)), const Size(800.0, 16.0));
+    expect(tester.getSize(find.text('text')).height, 16.0);
+    expect(tester.getTopLeft(find.text('text')).dy, 0.0);
+    expect(getOpacity(tester, 'hint'), 0.0);
+    expect(getBorderWeight(tester), 1.0);
+
+    await tester.pumpWidget(
+      buildInputDecorator(
+        // isEmpty: false (default),
+        // isFocused: false (default)
+        decoration: const InputDecoration(
+          hintText: 'hint',
+          contentPadding: EdgeInsets.symmetric(vertical: verticalPadding),
+        ),
+      ),
+    );
+
+    // The requested overall height is 18dps, however the minimum height is
+    // kMinInteractiveDimension because neither isDense or isCollapsed are true.
+    //   16 - input text (ahem font size 16dps)
+    //    2 - total vertical padding
+
+    expect(tester.getSize(find.byType(InputDecorator)), const Size(800.0, kMinInteractiveDimension));
+    expect(tester.getSize(find.text('text')).height, 16.0);
+    expect(tester.getTopLeft(find.text('text')).dy, 16.0);
+    expect(getOpacity(tester, 'hint'), 0.0);
+    expect(getBorderWeight(tester), 0.0);
+  });
+
   testWidgets('InputDecorator.collapsed', (WidgetTester tester) async {
     await tester.pumpWidget(
       buildInputDecorator(
@@ -2639,12 +2713,13 @@ void main() {
       ),
     );
 
-    // Overall height for this InputDecorator is 16dps:
+    // Overall height for this InputDecorator is 16dps. There is no minimum
+    // height when InputDecoration.collapsed is used.
     //   16 - input text (ahem font size 16dps)
 
-    expect(tester.getSize(find.byType(InputDecorator)), const Size(800.0, kMinInteractiveDimension)); // 16 bumped up to minimum.
+    expect(tester.getSize(find.byType(InputDecorator)), const Size(800.0, 16.0));
     expect(tester.getSize(find.text('text')).height, 16.0);
-    expect(tester.getTopLeft(find.text('text')).dy, 16.0);
+    expect(tester.getTopLeft(find.text('text')).dy, 0.0);
     expect(getOpacity(tester, 'hint'), 0.0);
     expect(getBorderWeight(tester), 0.0);
 
@@ -2660,11 +2735,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(tester.getSize(find.byType(InputDecorator)), const Size(800.0, kMinInteractiveDimension));
+    expect(tester.getSize(find.byType(InputDecorator)), const Size(800.0, 16.0));
     expect(tester.getSize(find.text('text')).height, 16.0);
-    expect(tester.getTopLeft(find.text('text')).dy, 16.0);
+    expect(tester.getTopLeft(find.text('text')).dy, 0.0);
     expect(tester.getSize(find.text('hint')).height, 16.0);
-    expect(tester.getTopLeft(find.text('hint')).dy, 16.0);
+    expect(tester.getTopLeft(find.text('hint')).dy, 0.0);
     expect(getBorderWeight(tester), 0.0);
   });
 
@@ -3669,7 +3744,7 @@ void main() {
       )
       ..restore(),
     );
-  }, skip: isBrowser);
+  }, skip: isBrowser); // https://github.com/flutter/flutter/issues/55317
 
   testWidgets('OutlineInputBorder radius carries over when lerping', (WidgetTester tester) async {
     // This is a regression test for https://github.com/flutter/flutter/issues/23982
@@ -3880,5 +3955,46 @@ void main() {
 
     // Ideographic (incorrect) value is 50.299999713897705
     expect(tester.getBottomLeft(find.text('hint')).dy, isBrowser ? 45.75 : 47.75);
+  });
+
+  testWidgets('InputDecorator floating label Y coordinate', (WidgetTester tester) async {
+    // Regression test for https://github.com/flutter/flutter/issues/54028
+    await tester.pumpWidget(
+      buildInputDecorator(
+        // Temporary opt-in fix for https://github.com/flutter/flutter/issues/54028
+        // Ensures that the floating label is vertically centered relative to
+        // center of the top edge of the InputDecorator's outline border.
+        fixTextFieldOutlineLabel: true,
+        isEmpty: true,
+        decoration: const InputDecoration(
+          labelText: 'label',
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(width: 4),
+          ),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    // floatingLabelGeight = 12 (ahem font size 16dps * 0.75 = 12)
+    // labelY = -floatingLabelHeight/2 + borderWidth/2
+    expect(tester.getTopLeft(find.text('label')).dy, -4.0);
+  });
+
+  testWidgets('InputDecorator floating label obeys floatingLabelBehavior', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildInputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'label',
+          floatingLabelBehavior: FloatingLabelBehavior.never,
+        ),
+      ),
+    );
+
+    // Passing floating behavior never results in a dy offset of 20
+    // because the label is not initially floating.
+    expect(tester.getTopLeft(find.text('label')).dy, 20.0);
   });
 }

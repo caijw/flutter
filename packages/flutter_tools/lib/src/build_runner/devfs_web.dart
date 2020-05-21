@@ -10,12 +10,7 @@ import 'package:dwds/dwds.dart';
 import 'package:logging/logging.dart';
 import 'package:meta/meta.dart';
 import 'package:mime/mime.dart' as mime;
-// TODO(bkonyi): remove deprecated member usage, https://github.com/flutter/flutter/issues/51951
-// ignore: deprecated_member_use
-import 'package:package_config/discovery.dart';
-// TODO(bkonyi): remove deprecated member usage, https://github.com/flutter/flutter/issues/51951
-// ignore: deprecated_member_use
-import 'package:package_config/packages.dart';
+import 'package:package_config/package_config.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf;
 
@@ -31,6 +26,7 @@ import '../bundle.dart';
 import '../cache.dart';
 import '../compile.dart';
 import '../convert.dart';
+import '../dart/package_map.dart';
 import '../devfs.dart';
 import '../globals.dart' as globals;
 import '../web/bootstrap.dart';
@@ -51,6 +47,15 @@ typedef DwdsLauncher = Future<Dwds> Function({
   UrlEncoder urlEncoder,
   ExpressionCompiler expressionCompiler,
 });
+
+// A minimal index for projects that do not yet support web.
+const String _kDefaultIndex = '''
+<html>
+    <body>
+        <script src="main.dart.js"></script>
+    </body>
+</html>
+''';
 
 /// An expression compiler connecting to FrontendServer
 ///
@@ -81,7 +86,8 @@ class WebExpressionCompiler implements ExpressionCompiler {
           content, compilerOutput.errorCount > 0);
     }
 
-    throw Exception('Failed to compile $expression');
+    return ExpressionCompilationResult(
+      'InternalError: frontend server failed to compile \'$expression\'', true);
   }
 }
 
@@ -128,9 +134,11 @@ class WebAssetServer implements AssetReader {
   /// Unhandled exceptions will throw a [ToolExit] with the error and stack
   /// trace.
   static Future<WebAssetServer> start(
+    ChromiumLauncher chromiumLauncher,
     String hostname,
     int port,
     UrlTunneller urlTunneller,
+    bool useSseForDebugProxy,
     BuildMode buildMode,
     bool enableDwds,
     Uri entrypoint,
@@ -139,17 +147,22 @@ class WebAssetServer implements AssetReader {
     DwdsLauncher dwdsLauncher = Dwds.start,
   }) async {
     try {
-      final InternetAddress address = (await InternetAddress.lookup(hostname)).first;
+      InternetAddress address;
+      if (hostname == 'any') {
+        address = InternetAddress.anyIPv4;
+      } else {
+        address = (await InternetAddress.lookup(hostname)).first;
+      }
       final HttpServer httpServer = await HttpServer.bind(address, port);
-      // TODO(bkonyi): remove deprecated member usage, https://github.com/flutter/flutter/issues/51951
-      // ignore: deprecated_member_use
-      final Packages packages = await loadPackagesFile(
-        Uri.base.resolve('.packages'), loader: (Uri uri) => globals.fs.file(uri).readAsBytes());
+      final PackageConfig packageConfig = await loadPackageConfigWithLogging(
+        globals.fs.file(globalPackagesPath),
+        logger: globals.logger,
+      );
       final Map<String, String> digests = <String, String>{};
       final Map<String, String> modules = <String, String>{};
       final WebAssetServer server = WebAssetServer(
         httpServer,
-        packages,
+        packageConfig,
         address,
         modules,
         digests,
@@ -205,11 +218,13 @@ class WebAssetServer implements AssetReader {
         enableDebugExtension: true,
         buildResults: const Stream<BuildResult>.empty(),
         chromeConnection: () async {
-          final Chrome chrome = await ChromeLauncher.connectedInstance;
-          return chrome.chromeConnection;
+          final Chromium chromium = await chromiumLauncher.connectedInstance;
+          return chromium.chromeConnection;
         },
+        hostname: hostname,
         urlEncoder: urlTunneller,
         enableDebugging: true,
+        useSseForDebugProxy: useSseForDebugProxy,
         serveDevTools: false,
         logWriter: (Level logLevel, String message) => globals.printTrace(message),
         loadStrategy: RequireStrategy(
@@ -246,9 +261,7 @@ class WebAssetServer implements AssetReader {
   // RandomAccessFile and read on demand.
   final Map<String, Uint8List> _files = <String, Uint8List>{};
   final Map<String, Uint8List> _sourcemaps = <String, Uint8List>{};
-  // TODO(bkonyi): remove deprecated member usage, https://github.com/flutter/flutter/issues/51951
-  // ignore: deprecated_member_use
-  final Packages _packages;
+  final PackageConfig _packages;
   final InternetAddress internetAddress;
   /* late final */ Dwds dwds;
   Directory entrypointCacheDirectory;
@@ -273,8 +286,11 @@ class WebAssetServer implements AssetReader {
         headers[HttpHeaders.contentTypeHeader] = 'text/html';
         headers[HttpHeaders.contentLengthHeader] = indexFile.lengthSync().toString();
         return shelf.Response.ok(indexFile.openRead(), headers: headers);
+      } else {
+        headers[HttpHeaders.contentTypeHeader] = 'text/html';
+        headers[HttpHeaders.contentLengthHeader] = _kDefaultIndex.length.toString();
+        return shelf.Response.ok(_kDefaultIndex, headers: headers);
       }
-      return shelf.Response.notFound('');
     }
 
     // Track etag headers for better caching of resources.
@@ -334,7 +350,8 @@ class WebAssetServer implements AssetReader {
 
     // For real files, use a serialized file stat plus path as a revision.
     // This allows us to update between canvaskit and non-canvaskit SDKs.
-    final String etag = file.lastModifiedSync().toIso8601String() + file.path;
+    final String etag = file.lastModifiedSync().toIso8601String()
+      + Uri.encodeComponent(file.path);
     if (ifNoneMatch == etag) {
       return shelf.Response.notModified();
     }
@@ -364,7 +381,11 @@ class WebAssetServer implements AssetReader {
 
   /// Write a single file into the in-memory cache.
   void writeFile(String filePath, String contents) {
-    _files[filePath] = Uint8List.fromList(utf8.encode(contents));
+    writeBytes(filePath, utf8.encode(contents) as Uint8List);
+  }
+
+  void writeBytes(String filePath, Uint8List contents) {
+    _files[filePath] = contents;
   }
 
   /// Update the in-memory asset server with the provided source and manifest files.
@@ -550,10 +571,12 @@ class WebDevFS implements DevFS {
     @required this.port,
     @required this.packagesFilePath,
     @required this.urlTunneller,
+    @required this.useSseForDebugProxy,
     @required this.buildMode,
     @required this.enableDwds,
     @required this.entrypoint,
     @required this.expressionCompiler,
+    @required this.chromiumLauncher,
     this.testMode = false,
   });
 
@@ -562,10 +585,12 @@ class WebDevFS implements DevFS {
   final int port;
   final String packagesFilePath;
   final UrlTunneller urlTunneller;
+  final bool useSseForDebugProxy;
   final BuildMode buildMode;
   final bool enableDwds;
   final bool testMode;
   final ExpressionCompiler expressionCompiler;
+  final ChromiumLauncher chromiumLauncher;
 
   WebAssetServer webAssetServer;
 
@@ -609,6 +634,9 @@ class WebDevFS implements DevFS {
   @override
   DateTime lastCompiled;
 
+  @override
+  PackageConfig lastPackageConfig;
+
   // We do not evict assets on the web.
   @override
   Set<String> get assetPathsToEvict => const <String>{};
@@ -620,16 +648,22 @@ class WebDevFS implements DevFS {
   @override
   Future<Uri> create() async {
     webAssetServer = await WebAssetServer.start(
+      chromiumLauncher,
       hostname,
       port,
       urlTunneller,
+      useSseForDebugProxy,
       buildMode,
       enableDwds,
       entrypoint,
       expressionCompiler,
       testMode: testMode,
     );
-    _baseUri = Uri.parse('http://$hostname:$port');
+    if (hostname == 'any') {
+      _baseUri = Uri.http('localhost:$port', '');
+    } else {
+      _baseUri = Uri.http('$hostname:$port', '');
+    }
     return _baseUri;
   }
 
@@ -652,7 +686,7 @@ class WebDevFS implements DevFS {
 
   @override
   Future<UpdateFSReport> update({
-    String mainPath,
+    Uri mainUri,
     String target,
     AssetBundle bundle,
     DateTime firstBuildTime,
@@ -665,20 +699,23 @@ class WebDevFS implements DevFS {
     String pathToReload,
     List<Uri> invalidatedFiles,
     bool skipAssets = false,
+    @required PackageConfig packageConfig,
   }) async {
     assert(trackWidgetCreation != null);
     assert(generator != null);
-    final String outputDirectoryPath = globals.fs.file(mainPath).parent.path;
+    lastPackageConfig = packageConfig;
+    final File mainFile = globals.fs.file(mainUri);
+    final String outputDirectoryPath = mainFile.parent.path;
 
     if (bundleFirstUpload) {
       webAssetServer.entrypointCacheDirectory = globals.fs.directory(outputDirectoryPath);
       generator.addFileSystemRoot(outputDirectoryPath);
-      final String entrypoint = globals.fs.path.basename(mainPath);
-      webAssetServer.writeFile(entrypoint, globals.fs.file(mainPath).readAsStringSync());
+      final String entrypoint = globals.fs.path.basename(mainFile.path);
+      webAssetServer.writeBytes(entrypoint, mainFile.readAsBytesSync());
+      webAssetServer.writeBytes('require.js', requireJS.readAsBytesSync());
+      webAssetServer.writeBytes('stack_trace_mapper.js', stackTraceMapper.readAsBytesSync());
       webAssetServer.writeFile('manifest.json', '{"info":"manifest not generated in run mode."}');
       webAssetServer.writeFile('flutter_service_worker.js', '// Service worker not loaded in run mode.');
-      webAssetServer.writeFile('require.js', requireJS.readAsStringSync());
-      webAssetServer.writeFile('stack_trace_mapper.js', stackTraceMapper.readAsStringSync());
       webAssetServer.writeFile(
         'main.dart.js',
         generateBootstrapScript(
@@ -711,11 +748,14 @@ class WebDevFS implements DevFS {
     // mapping the file name, this is done via an additional file root and
     // specicial hard-coded scheme.
     final CompilerOutput compilerOutput = await generator.recompile(
-     'org-dartlang-app:///' + globals.fs.path.basename(mainPath),
+      Uri(
+        scheme: 'org-dartlang-app',
+        path: '/' + mainUri.pathSegments.last,
+      ),
       invalidatedFiles,
       outputPath: dillOutputPath ??
         getDefaultApplicationKernelPath(trackWidgetCreation: trackWidgetCreation),
-      packagesFilePath: packagesFilePath,
+      packageConfig: packageConfig,
     );
     if (compilerOutput == null || compilerOutput.errorCount > 0) {
       return UpdateFSReport(success: false);

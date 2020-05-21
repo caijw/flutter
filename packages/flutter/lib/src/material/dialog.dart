@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(shihaohong): remove ignoring deprecated member use analysis
-// when AlertDialog.scrollable parameter is removed. See
-// https://flutter.dev/go/scrollable-alert-dialog for more details.
+// TODO(shihaohong-Piinks): remove ignoring deprecated member use analysis
+//   * when AlertDialog.scrollable parameter is removed. See
+//     https://flutter.dev/go/scrollable-alert-dialog for more details.
+//   * when Dialog.useMaterialBorderRadius parameter is removed.
 // ignore_for_file: deprecated_member_use_from_same_package
 
 import 'dart:async';
@@ -55,7 +56,9 @@ class Dialog extends StatelessWidget {
     this.clipBehavior = Clip.none,
     this.shape,
     this.child,
+    bool useMaterialBorderRadius,
   }) : assert(clipBehavior != null),
+       useMaterialBorderRadius = useMaterialBorderRadius ?? false,
        super(key: key);
 
   /// {@template flutter.material.dialog.backgroundColor}
@@ -117,7 +120,8 @@ class Dialog extends StatelessWidget {
   ///
   /// Defines the dialog's [Material.shape].
   ///
-  /// The default shape is a [RoundedRectangleBorder] with a radius of 2.0.
+  /// The default shape is a [RoundedRectangleBorder] with a radius of 2.0
+  /// (temporarily, set [useMaterialBorderRadius] to match Material guidelines).
   /// {@endtemplate}
   final ShapeBorder shape;
 
@@ -126,8 +130,19 @@ class Dialog extends StatelessWidget {
   /// {@macro flutter.widgets.child}
   final Widget child;
 
-  // TODO(johnsonmh): Update default dialog border radius to 4.0 to match material spec.
+  /// Indicates whether the [Dialog.shape]'s default [RoundedRectangleBorder]
+  /// should have a radius of 4.0 pixels to match Material Design, or use the
+  /// prior default of 2.0 pixels.
+  @Deprecated(
+    'Set useMaterialBorderRadius to `true`. This parameter will be removed and '
+    'was introduced to migrate Dialog to the correct border radius by default. '
+    'This feature was deprecated after v1.18.0.'
+  )
+  final bool useMaterialBorderRadius;
+
   static const RoundedRectangleBorder _defaultDialogShape =
+    RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(4.0)));
+  static const RoundedRectangleBorder _oldDefaultDialogShape =
     RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(2.0)));
   static const double _defaultElevation = 24.0;
 
@@ -151,7 +166,11 @@ class Dialog extends StatelessWidget {
             child: Material(
               color: backgroundColor ?? dialogTheme.backgroundColor ?? Theme.of(context).dialogBackgroundColor,
               elevation: elevation ?? dialogTheme.elevation ?? _defaultElevation,
-              shape: shape ?? dialogTheme.shape ?? _defaultDialogShape,
+              shape: shape ?? dialogTheme.shape ?? (
+                useMaterialBorderRadius ?
+                  _defaultDialogShape :
+                  _oldDefaultDialogShape
+              ),
               type: MaterialType.card,
               clipBehavior: clipBehavior,
               child: child,
@@ -260,8 +279,10 @@ class AlertDialog extends StatelessWidget {
     this.clipBehavior = Clip.none,
     this.shape,
     this.scrollable = false,
+    bool useMaterialBorderRadius,
   }) : assert(contentPadding != null),
        assert(clipBehavior != null),
+       useMaterialBorderRadius = useMaterialBorderRadius ?? false,
        super(key: key);
 
   /// The (optional) title of the dialog is displayed in a large font at the top
@@ -449,6 +470,16 @@ class AlertDialog extends StatelessWidget {
   )
   final bool scrollable;
 
+  /// Indicates whether the [Dialog.shape]'s default [RoundedRectangleBorder]
+  /// should have a radius of 4.0 pixels to match Material Design, or use the
+  /// prior default of 2.0 pixels.
+  @Deprecated(
+    'Set useMaterialBorderRadius to `true`. This parameter will be removed and '
+    'was introduced to migrate Dialog to the correct border radius by default. '
+    'This feature was deprecated after v1.18.0.'
+  )
+  final bool useMaterialBorderRadius;
+
   @override
   Widget build(BuildContext context) {
     assert(debugCheckHasMaterialLocalizations(context));
@@ -560,6 +591,7 @@ class AlertDialog extends StatelessWidget {
       clipBehavior: clipBehavior,
       shape: shape,
       child: dialogChild,
+      useMaterialBorderRadius: useMaterialBorderRadius,
     );
   }
 }
@@ -712,14 +744,17 @@ class SimpleDialog extends StatelessWidget {
     Key key,
     this.title,
     this.titlePadding = const EdgeInsets.fromLTRB(24.0, 24.0, 24.0, 0.0),
+    this.titleTextStyle,
     this.children,
     this.contentPadding = const EdgeInsets.fromLTRB(0.0, 12.0, 0.0, 16.0),
     this.backgroundColor,
     this.elevation,
     this.semanticLabel,
     this.shape,
+    bool useMaterialBorderRadius,
   }) : assert(titlePadding != null),
        assert(contentPadding != null),
+       useMaterialBorderRadius = useMaterialBorderRadius ?? false,
        super(key: key);
 
   /// The (optional) title of the dialog is displayed in a large font at the top
@@ -738,6 +773,12 @@ class SimpleDialog extends StatelessWidget {
   /// See [contentPadding] for the conventions regarding padding between the
   /// [title] and the [children].
   final EdgeInsetsGeometry titlePadding;
+
+  /// Style for the text in the [title] of this [SimpleDialog].
+  ///
+  /// If null, [DialogTheme.titleTextStyle] is used, if that's null, defaults to
+  /// [ThemeData.textTheme.headline6].
+  final TextStyle titleTextStyle;
 
   /// The (optional) content of the dialog is displayed in a
   /// [SingleChildScrollView] underneath the title.
@@ -782,6 +823,16 @@ class SimpleDialog extends StatelessWidget {
   /// {@macro flutter.material.dialog.shape}
   final ShapeBorder shape;
 
+  /// Indicates whether the [Dialog.shape]'s default [RoundedRectangleBorder]
+  /// should have a radius of 4.0 pixels to match Material Design, or use the
+  /// prior default of 2.0 pixels.
+  @Deprecated(
+    'Set useMaterialBorderRadius to `true`. This parameter will be removed and '
+    'was introduced to migrate Dialog to the correct border radius by default. '
+    'This feature was deprecated after v1.18.0.'
+  )
+  final bool useMaterialBorderRadius;
+
   @override
   Widget build(BuildContext context) {
     assert(debugCheckHasMaterialLocalizations(context));
@@ -814,7 +865,7 @@ class SimpleDialog extends StatelessWidget {
               Padding(
                 padding: titlePadding,
                 child: DefaultTextStyle(
-                  style: theme.textTheme.headline6,
+                  style: titleTextStyle ?? DialogTheme.of(context).titleTextStyle ?? theme.textTheme.headline6,
                   child: Semantics(namesRoute: true, child: title),
                 ),
               ),
@@ -841,6 +892,7 @@ class SimpleDialog extends StatelessWidget {
       elevation: elevation,
       shape: shape,
       child: dialogChild,
+      useMaterialBorderRadius: useMaterialBorderRadius,
     );
   }
 }
@@ -871,10 +923,23 @@ Widget _buildMaterialDialogTransitions(BuildContext context, Animation<double> a
 /// the dialog. It is only used when the method is called. Its corresponding
 /// widget can be safely removed from the tree before the dialog is closed.
 ///
+/// The `barrierDismissible` argument is used to indicate whether tapping on the
+/// barrier will dismiss the dialog. It is `true` by default and can not be `null`.
+///
+/// The `barrierColor` argument is used to specify the color of the modal
+/// barrier that darkens everything the dialog. If `null` the default color
+/// `Colors.black54` is used.
+///
+/// The `useSafeArea` argument is used to indicate if the dialog should only
+/// display in 'safe' areas of the screen not used by the operating system
+/// (see [SafeArea] for more details). It is `true` by default which will mean
+/// the dialog will not overlap operating system areas. If it is set to `false`
+/// the dialog will only be constrained by the screen size. It can not be 'null`.
+//
 /// The `useRootNavigator` argument is used to determine whether to push the
 /// dialog to the [Navigator] furthest from or nearest to the given `context`.
 /// By default, `useRootNavigator` is `true` and the dialog route created by
-/// this method is pushed to the root navigator.
+/// this method is pushed to the root navigator. It can not be `null`.
 ///
 /// The `routeSettings` argument is passed to [showGeneralDialog],
 /// see [RouteSettings] for details.
@@ -897,7 +962,12 @@ Widget _buildMaterialDialogTransitions(BuildContext context, Animation<double> a
 ///  * <https://material.io/design/components/dialogs.html>
 Future<T> showDialog<T>({
   @required BuildContext context,
+  WidgetBuilder builder,
   bool barrierDismissible = true,
+  Color barrierColor,
+  bool useSafeArea = true,
+  bool useRootNavigator = true,
+  RouteSettings routeSettings,
   @Deprecated(
     'Instead of using the "child" argument, return the child from a closure '
     'provided to the "builder" argument. This will ensure that the BuildContext '
@@ -905,11 +975,10 @@ Future<T> showDialog<T>({
     'This feature was deprecated after v0.2.3.'
   )
   Widget child,
-  WidgetBuilder builder,
-  bool useRootNavigator = true,
-  RouteSettings routeSettings,
 }) {
   assert(child == null || builder == null);
+  assert(barrierDismissible != null);
+  assert(useSafeArea != null);
   assert(useRootNavigator != null);
   assert(debugCheckHasMaterialLocalizations(context));
 
@@ -918,19 +987,21 @@ Future<T> showDialog<T>({
     context: context,
     pageBuilder: (BuildContext buildContext, Animation<double> animation, Animation<double> secondaryAnimation) {
       final Widget pageChild = child ?? Builder(builder: builder);
-      return SafeArea(
-        child: Builder(
-          builder: (BuildContext context) {
-            return theme != null
-                ? Theme(data: theme, child: pageChild)
-                : pageChild;
-          }
-        ),
+      Widget dialog = Builder(
+        builder: (BuildContext context) {
+          return theme != null
+            ? Theme(data: theme, child: pageChild)
+            : pageChild;
+        }
       );
+      if (useSafeArea) {
+        dialog = SafeArea(child: dialog);
+      }
+      return dialog;
     },
     barrierDismissible: barrierDismissible,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-    barrierColor: Colors.black54,
+    barrierColor: barrierColor ?? Colors.black54,
     transitionDuration: const Duration(milliseconds: 150),
     transitionBuilder: _buildMaterialDialogTransitions,
     useRootNavigator: useRootNavigator,

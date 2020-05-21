@@ -35,12 +35,11 @@ import 'reporting/reporting.dart';
 import 'tester/flutter_tester.dart';
 import 'version.dart';
 import 'vscode/vscode_validator.dart';
+import 'web/chrome.dart';
 import 'web/web_validator.dart';
 import 'web/workflow.dart';
 import 'windows/visual_studio_validator.dart';
 import 'windows/windows_workflow.dart';
-
-Doctor get doctor => context.get<Doctor>();
 
 abstract class DoctorValidatorsProvider {
   /// The singleton instance, pulled from the [AppContext].
@@ -84,14 +83,21 @@ class _DefaultDoctorValidatorsProvider implements DoctorValidatorsProvider {
       if (globals.iosWorkflow.appliesToHostPlatform || macOSWorkflow.appliesToHostPlatform)
         GroupedValidator(<DoctorValidator>[XcodeValidator(xcode: globals.xcode, userMessages: userMessages), cocoapodsValidator]),
       if (webWorkflow.appliesToHostPlatform)
-        WebValidator(
-          chromeLauncher: globals.chromeLauncher,
+        ChromeValidator(
+          chromiumLauncher: ChromiumLauncher(
+            browserFinder: findChromeExecutable,
+            fileSystem: globals.fs,
+            logger: globals.logger,
+            operatingSystemUtils: globals.os,
+            platform:  globals.platform,
+            processManager: globals.processManager,
+          ),
           platform: globals.platform,
-          fileSystem: globals.fs,
         ),
       if (linuxWorkflow.appliesToHostPlatform)
         LinuxDoctorValidator(
           processManager: globals.processManager,
+          userMessages: userMessages,
         ),
       if (windowsWorkflow.appliesToHostPlatform)
         visualStudioValidator,
@@ -153,7 +159,11 @@ class ValidatorTask {
 }
 
 class Doctor {
-  const Doctor();
+  Doctor({
+    @required Logger logger,
+  }) : _logger = logger;
+
+  final Logger _logger;
 
   List<DoctorValidator> get validators {
     return DoctorValidatorsProvider.instance.validators;
@@ -184,7 +194,7 @@ class Doctor {
 
   /// Print a summary of the state of the tooling, as well as how to get more info.
   Future<void> summary() async {
-    globals.printStatus(await _summaryText());
+    _logger.printStatus(await _summaryText());
   }
 
   Future<String> _summaryText() async {
@@ -263,7 +273,7 @@ class Doctor {
     }
 
     if (!verbose) {
-      globals.printStatus('Doctor summary (to see all details, run flutter doctor -v):');
+      _logger.printStatus('Doctor summary (to see all details, run flutter doctor -v):');
     }
     bool doctorResult = true;
     int issues = 0;
@@ -307,10 +317,10 @@ class Doctor {
 
       final String leadingBox = showColor ? result.coloredLeadingBox : result.leadingBox;
       if (result.statusInfo != null) {
-        globals.printStatus('$leadingBox ${validator.title} (${result.statusInfo})',
+        _logger.printStatus('$leadingBox ${validator.title} (${result.statusInfo})',
             hangingIndent: result.leadingBox.length + 1);
       } else {
-        globals.printStatus('$leadingBox ${validator.title}',
+        _logger.printStatus('$leadingBox ${validator.title}',
             hangingIndent: result.leadingBox.length + 1);
       }
 
@@ -320,7 +330,7 @@ class Doctor {
           int indent = 4;
           final String indicator = showColor ? message.coloredIndicator : message.indicator;
           for (final String line in '$indicator ${message.message}'.split('\n')) {
-            globals.printStatus(line, hangingIndent: hangingIndent, indent: indent, emphasis: true);
+            _logger.printStatus(line, hangingIndent: hangingIndent, indent: indent, emphasis: true);
             // Only do hanging indent for the first line.
             hangingIndent = 0;
             indent = 6;
@@ -328,20 +338,20 @@ class Doctor {
         }
       }
       if (verbose) {
-        globals.printStatus('');
+        _logger.printStatus('');
       }
     }
 
     // Make sure there's always one line before the summary even when not verbose.
     if (!verbose) {
-      globals.printStatus('');
+      _logger.printStatus('');
     }
 
     if (issues > 0) {
-      globals.printStatus('${showColor ? globals.terminal.color('!', TerminalColor.yellow) : '!'}'
+      _logger.printStatus('${showColor ? globals.terminal.color('!', TerminalColor.yellow) : '!'}'
         ' Doctor found issues in $issues categor${issues > 1 ? "ies" : "y"}.', hangingIndent: 2);
     } else {
-      globals.printStatus('${showColor ? globals.terminal.color('•', TerminalColor.green) : '•'}'
+      _logger.printStatus('${showColor ? globals.terminal.color('•', TerminalColor.green) : '•'}'
         ' No issues found!', hangingIndent: 2);
     }
 
@@ -481,14 +491,15 @@ class GroupedValidator extends DoctorValidator {
   }
 }
 
+@immutable
 class ValidationResult {
   /// [ValidationResult.type] should only equal [ValidationResult.installed]
   /// if no [messages] are hints or errors.
-  ValidationResult(this.type, this.messages, { this.statusInfo });
+  const ValidationResult(this.type, this.messages, { this.statusInfo });
 
   factory ValidationResult.crash(Object error, [StackTrace stackTrace]) {
     return ValidationResult(ValidationType.crash, <ValidationMessage>[
-      ValidationMessage.error(
+      const ValidationMessage.error(
           'Due to an error, the doctor check did not complete. '
           'If the error message below is not helpful, '
           'please let us know about this issue at https://github.com/flutter/flutter/issues.'),
@@ -555,10 +566,11 @@ class ValidationResult {
   }
 }
 
+@immutable
 class ValidationMessage {
-  ValidationMessage(this.message) : type = ValidationMessageType.information;
-  ValidationMessage.error(this.message) : type = ValidationMessageType.error;
-  ValidationMessage.hint(this.message) : type = ValidationMessageType.hint;
+  const ValidationMessage(this.message) : type = ValidationMessageType.information;
+  const ValidationMessage.error(this.message) : type = ValidationMessageType.error;
+  const ValidationMessage.hint(this.message) : type = ValidationMessageType.hint;
 
   final ValidationMessageType type;
   bool get isError => type == ValidationMessageType.error;
@@ -631,6 +643,12 @@ class FlutterValidator extends DoctorValidator {
       )));
       messages.add(ValidationMessage(userMessages.engineRevision(version.engineRevisionShort)));
       messages.add(ValidationMessage(userMessages.dartRevision(version.dartSdkVersion)));
+      if (globals.platform.environment.containsKey('PUB_HOSTED_URL')) {
+        messages.add(ValidationMessage(userMessages.pubMirrorURL(globals.platform.environment['PUB_HOSTED_URL'])));
+      }
+      if (globals.platform.environment.containsKey('FLUTTER_STORAGE_BASE_URL')) {
+        messages.add(ValidationMessage(userMessages.flutterMirrorURL(globals.platform.environment['FLUTTER_STORAGE_BASE_URL'])));
+      }
     } on VersionCheckError catch (e) {
       messages.add(ValidationMessage.error(e.message));
       valid = ValidationType.partial;
@@ -714,7 +732,7 @@ abstract class IntelliJValidator extends DoctorValidator {
     final List<ValidationMessage> messages = <ValidationMessage>[];
 
     if (pluginsPath == null) {
-      messages.add(ValidationMessage.error('Invalid IntelliJ version number.'));
+      messages.add(const ValidationMessage.error('Invalid IntelliJ version number.'));
     } else {
       messages.add(ValidationMessage(userMessages.intellijLocation(installPath)));
 

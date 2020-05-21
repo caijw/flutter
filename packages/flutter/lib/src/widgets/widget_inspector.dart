@@ -959,13 +959,13 @@ mixin WidgetInspectorService {
     SchedulerBinding.instance.addPersistentFrameCallback(_onFrameStart);
 
     final FlutterExceptionHandler structuredExceptionHandler = _reportError;
-    final FlutterExceptionHandler defaultExceptionHandler = FlutterError.onError;
+    final FlutterExceptionHandler defaultExceptionHandler = FlutterError.presentError;
 
     _registerBoolServiceExtension(
       name: 'structuredErrors',
-      getter: () async => FlutterError.onError == structuredExceptionHandler,
+      getter: () async => FlutterError.presentError == structuredExceptionHandler,
       setter: (bool value) {
-        FlutterError.onError = value ? structuredExceptionHandler : defaultExceptionHandler;
+        FlutterError.presentError = value ? structuredExceptionHandler : defaultExceptionHandler;
         return Future<void>.value();
       },
     );
@@ -2426,6 +2426,7 @@ class _RenderInspectorOverlay extends RenderBox {
   }
 }
 
+@immutable
 class _TransformedRect {
   _TransformedRect(RenderObject object)
     : rect = object.semanticBounds,
@@ -2451,8 +2452,9 @@ class _TransformedRect {
 ///
 /// The equality operator can be used to determine whether the overlay needs to
 /// be rendered again.
+@immutable
 class _InspectorOverlayRenderState {
-  _InspectorOverlayRenderState({
+  const _InspectorOverlayRenderState({
     @required this.overlayRect,
     @required this.selected,
     @required this.candidates,

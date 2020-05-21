@@ -22,12 +22,14 @@ import '../runner/flutter_command.dart';
 /// package version in cases when upgrading to the latest breaks Flutter.
 const Map<String, String> _kManuallyPinnedDependencies = <String, String>{
   // Add pinned packages here.
-  'flutter_gallery_assets': '0.1.9+2', // See //dev/integration_tests/flutter_gallery/pubspec.yaml
+  // Dart analyzer does not catch renamed or deleted files.
+  // Therefore, we control the version of flutter_gallery_assets so that
+  // existing tests do not fail when the package has a new version.
+  'flutter_gallery_assets': '^0.2.0',
   'mockito': '^4.1.0',  // Prevent mockito from downgrading to 4.0.0
   'vm_service_client': '0.2.6+2', // Final version before being marked deprecated.
   'video_player': '0.10.6', // 0.10.7 fails a gallery smoke test for toString.
-  'package_config': '1.9.1',
-  'flutter_template_images': '1.0.0', // 1.0.1 breaks windows tests
+  'flutter_template_images': '1.0.1', // Must always exactly match flutter_tools template.
 };
 
 class UpdatePackagesCommand extends FlutterCommand {
@@ -1290,7 +1292,7 @@ class PubDependencyTree {
           dependencies = const <String>[];
         }
         _versions[package] = version;
-        _dependencyTree[package] = Set<String>.from(dependencies);
+        _dependencyTree[package] = Set<String>.of(dependencies);
       }
     }
     return null;

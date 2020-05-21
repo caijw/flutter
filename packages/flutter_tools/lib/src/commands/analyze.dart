@@ -5,11 +5,11 @@
 import 'dart:async';
 
 import 'package:meta/meta.dart';
-import 'package:platform/platform.dart';
 import 'package:process/process.dart';
 
 import '../base/file_system.dart';
 import '../base/logger.dart';
+import '../base/platform.dart';
 import '../base/terminal.dart';
 import '../globals.dart' as globals;
 import '../runner/flutter_command.dart';
@@ -30,6 +30,7 @@ class AnalyzeCommand extends FlutterCommand {
        _logger = logger,
        _terminal = terminal,
        _platform = platform {
+    addEnableExperimentation(hide: !verboseHelp);
     argParser.addFlag('flutter-repo',
         negatable: false,
         help: 'Include all the examples and tests from the Flutter repository.',
@@ -118,6 +119,7 @@ class AnalyzeCommand extends FlutterCommand {
         platform: _platform,
         processManager: _processManager,
         terminal: _terminal,
+        experiments: stringsArg('enable-experiment'),
       ).analyze();
     } else {
       await AnalyzeOnce(
@@ -132,6 +134,7 @@ class AnalyzeCommand extends FlutterCommand {
         platform: _platform,
         processManager: _processManager,
         terminal: _terminal,
+        experiments: stringsArg('enable-experiment'),
       ).analyze();
     }
     return FlutterCommandResult.success();

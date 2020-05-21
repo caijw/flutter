@@ -404,7 +404,7 @@ Future<LaunchResult> _startApp(DriveCommand command, Uri webUri) async {
   await appStopper(command);
 
   final ApplicationPackage package = await command.applicationPackages
-      .getPackageForPlatform(await command.device.targetPlatform);
+      .getPackageForPlatform(await command.device.targetPlatform, command.getBuildInfo());
 
   if (command.shouldBuild) {
     globals.printTrace('Installing application package.');
@@ -470,14 +470,14 @@ void restoreTestRunner() {
 Future<void> _runTests(List<String> testArgs, Map<String, String> environment) async {
   globals.printTrace('Running driver tests.');
 
-  PackageMap.globalPackagesPath = globals.fs.path.normalize(globals.fs.path.absolute(PackageMap.globalPackagesPath));
+  globalPackagesPath = globals.fs.path.normalize(globals.fs.path.absolute(globalPackagesPath));
   final String dartVmPath = globals.fs.path.join(dartSdkPath, 'bin', 'dart');
   final int result = await processUtils.stream(
     <String>[
       dartVmPath,
       ...dartVmFlags,
       ...testArgs,
-      '--packages=${PackageMap.globalPackagesPath}',
+      '--packages=$globalPackagesPath',
       '-rexpanded',
     ],
     environment: environment,
@@ -497,7 +497,10 @@ void restoreAppStopper() {
 
 Future<bool> _stopApp(DriveCommand command) async {
   globals.printTrace('Stopping application.');
-  final ApplicationPackage package = await command.applicationPackages.getPackageForPlatform(await command.device.targetPlatform);
+  final ApplicationPackage package = await command.applicationPackages.getPackageForPlatform(
+    await command.device.targetPlatform,
+    command.getBuildInfo(),
+  );
   final bool stopped = await command.device.stopApp(package);
   await command._deviceLogSubscription?.cancel();
   return stopped;

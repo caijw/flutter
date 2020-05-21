@@ -249,7 +249,7 @@ void main() {
     );
     expect(tester.renderObject<RenderParagraph>(find.byType(RichText)).text.style.fontFamily, 'Ahem');
     expect(tester.getSize(find.byType(Tab)), const Size(14.0, 46.0));
-  }, skip: isBrowser);
+  });
 
   testWidgets('Tab sizing - icon and text', (WidgetTester tester) async {
     await tester.pumpWidget(
@@ -257,7 +257,7 @@ void main() {
     );
     expect(tester.renderObject<RenderParagraph>(find.byType(RichText)).text.style.fontFamily, 'Ahem');
     expect(tester.getSize(find.byType(Tab)), const Size(14.0, 72.0));
-  }, skip: isBrowser);
+  });
 
   testWidgets('Tab sizing - icon, iconMargin and text', (WidgetTester tester) async {
     await tester.pumpWidget(
@@ -281,7 +281,7 @@ void main() {
     );
     expect(tester.renderObject<RenderParagraph>(find.byType(RichText)).text.style.fontFamily, 'Ahem');
     expect(tester.getSize(find.byType(Tab)), const Size(210.0, 72.0));
-  }, skip: isBrowser);
+  });
 
   testWidgets('Tab sizing - icon and child', (WidgetTester tester) async {
     await tester.pumpWidget(
@@ -289,7 +289,7 @@ void main() {
     );
     expect(tester.renderObject<RenderParagraph>(find.byType(RichText)).text.style.fontFamily, 'Ahem');
     expect(tester.getSize(find.byType(Tab)), const Size(14.0, 72.0));
-  }, skip: isBrowser);
+  });
 
   testWidgets('Tab color - normal', (WidgetTester tester) async {
     final Widget tabBar = TabBar(tabs: const <Widget>[SizedBox.shrink()], controller: TabController(length: 1, vsync: tester));
@@ -412,7 +412,7 @@ void main() {
 
     // Scrolling the TabBar doesn't change the selection
     expect(controller.index, 0);
-  }, skip: isBrowser);
+  });
 
   testWidgets('TabBarView maintains state', (WidgetTester tester) async {
     final List<String> tabs = <String>['AAAAAA', 'BBBBBB', 'CCCCCC', 'DDDDDD', 'EEEEEE'];
@@ -1671,7 +1671,7 @@ void main() {
     expect(semantics, hasSemantics(expectedSemantics));
 
     semantics.dispose();
-  }, skip: isBrowser);
+  });
 
   testWidgets('correct scrolling semantics', (WidgetTester tester) async {
     final SemanticsTester semantics = SemanticsTester(tester);
@@ -1939,7 +1939,7 @@ void main() {
     expect(semantics, hasSemantics(expectedSemantics));
 
     semantics.dispose();
-  }, skip: isBrowser);
+  });
 
   testWidgets('can be notified of TabBar onTap behavior', (WidgetTester tester) async {
     int tabIndex = -1;
@@ -2475,4 +2475,69 @@ void main() {
 
     expect(tabBarWithText.preferredSize, tabBarWithTextChild.preferredSize);
    });
+
+  testWidgets('Setting TabController index should make TabBar indicator immediately pop into the position', (WidgetTester tester) async {
+    const List<Tab> tabs = <Tab>[
+      Tab(text: 'A'), Tab(text: 'B'), Tab(text: 'C')
+    ];
+    const Color indicatorColor = Color(0xFFFF0000);
+    TabController tabController;
+
+    Widget buildTabControllerFrame(BuildContext context, TabController controller) {
+      tabController = controller;
+      return MaterialApp(
+        home: Scaffold(
+          appBar: AppBar(
+            bottom: TabBar(
+              controller: controller,
+              tabs: tabs,
+              indicatorColor: indicatorColor,
+            ),
+          ),
+          body: TabBarView(
+            controller: controller,
+            children: tabs.map((Tab tab) {
+              return Center(child: Text(tab.text));
+            }).toList(),
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(TabControllerFrame(
+      builder: buildTabControllerFrame,
+      length: tabs.length,
+      initialIndex: 0,
+    ));
+
+    final RenderBox box = tester.renderObject(find.byType(TabBar));
+    final TabIndicatorRecordingCanvas canvas = TabIndicatorRecordingCanvas(indicatorColor);
+    final TestRecordingPaintingContext context = TestRecordingPaintingContext(canvas);
+
+    box.paint(context, Offset.zero);
+    double expectedIndicatorLeft = canvas.indicatorRect.left;
+
+    final PageView pageView = tester.widget(find.byType(PageView));
+    final PageController pageController = pageView.controller;
+    void pageControllerListener() {
+      // Whenever TabBarView scrolls due to changing TabController's index,
+      // check if indicator stays idle in its expectedIndicatorLeft
+      box.paint(context, Offset.zero);
+      expect(canvas.indicatorRect.left, expectedIndicatorLeft);
+    }
+
+    // Moving from index 0 to 2 (distanced tabs)
+    tabController.index = 2;
+    box.paint(context, Offset.zero);
+    expectedIndicatorLeft = canvas.indicatorRect.left;
+    pageController.addListener(pageControllerListener);
+    await tester.pumpAndSettle();
+
+    // Moving from index 2 to 1 (neighboring tabs)
+    tabController.index = 1;
+    box.paint(context, Offset.zero);
+    expectedIndicatorLeft = canvas.indicatorRect.left;
+    await tester.pumpAndSettle();
+    pageController.removeListener(pageControllerListener);
+  });
 }

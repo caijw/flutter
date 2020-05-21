@@ -5,9 +5,9 @@
 import 'dart:math' as math;
 
 import 'package:meta/meta.dart';
-import 'package:platform/platform.dart';
 
 import 'logger.dart';
+import 'platform.dart';
 import 'terminal.dart';
 
 // ignore_for_file: non_constant_identifier_names
@@ -88,6 +88,12 @@ class CommandHelp {
     'Detach (terminate "flutter run" but leave application running).',
   );
 
+  CommandHelpOption _g;
+  CommandHelpOption get g => _g ??= _makeOption(
+    'g',
+    'Run source code generators.'
+  );
+
   CommandHelpOption _h;
   CommandHelpOption get h => _h ??= _makeOption(
     'h',
@@ -163,6 +169,12 @@ class CommandHelp {
   CommandHelpOption get k => _k ??= _makeOption(
     'k',
     'Toggle CanvasKit rendering.',
+  );
+
+  CommandHelpOption _M;
+  CommandHelpOption get M => _M ??= _makeOption(
+    'M',
+    'Write SkSL shaders to a unique file in the project directory.',
   );
 
   CommandHelpOption _makeOption(String key, String description, [

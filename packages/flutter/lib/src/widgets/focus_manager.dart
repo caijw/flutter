@@ -407,16 +407,20 @@ class FocusNode with DiagnosticableTreeMixin, ChangeNotifier {
   ///
   /// The [debugLabel] is ignored on release builds.
   ///
-  /// The [skipTraversal] and [canRequestFocus] arguments must not be null.
+  /// The [skipTraversal], [descendantsAreFocusable], and [canRequestFocus]
+  /// arguments must not be null.
   FocusNode({
     String debugLabel,
     FocusOnKeyCallback onKey,
     bool skipTraversal = false,
     bool canRequestFocus = true,
+    bool descendantsAreFocusable = true,
   })  : assert(skipTraversal != null),
         assert(canRequestFocus != null),
+        assert(descendantsAreFocusable != null),
         _skipTraversal = skipTraversal,
         _canRequestFocus = canRequestFocus,
+        _descendantsAreFocusable = descendantsAreFocusable,
         _onKey = onKey {
     // Set it via the setter so that it does nothing on release builds.
     this.debugLabel = debugLabel;
@@ -469,20 +473,69 @@ class FocusNode with DiagnosticableTreeMixin, ChangeNotifier {
   ///  * [FocusTraversalPolicy], a class that can be extended to describe a
   ///    traversal policy.
   bool get canRequestFocus {
+    if (!_canRequestFocus) {
+      return false;
+    }
     final FocusScopeNode scope = enclosingScope;
-    return _canRequestFocus && (scope == null || scope.canRequestFocus);
+    if (scope != null && !scope.canRequestFocus) {
+      return false;
+    }
+    for (final FocusNode ancestor in ancestors) {
+      if (!ancestor.descendantsAreFocusable) {
+        return false;
+      }
+    }
+    return true;
   }
 
   bool _canRequestFocus;
   @mustCallSuper
   set canRequestFocus(bool value) {
     if (value != _canRequestFocus) {
-      if (!value) {
+      // Have to set this first before unfocusing, since it checks this to cull
+      // unfocusable, previously-focused children.
+      _canRequestFocus = value;
+      if (hasFocus && !value) {
         unfocus(disposition: UnfocusDisposition.previouslyFocusedChild);
       }
-      _canRequestFocus = value;
       _manager?._markPropertiesChanged(this);
     }
+  }
+
+  /// If false, will disable focus for all of this node's descendants.
+  ///
+  /// Defaults to true. Does not affect focusability of this node: for that,
+  /// use [canRequestFocus].
+  ///
+  /// If any descendants are focused when this is set to false, they will be
+  /// unfocused. When `descendantsAreFocusable` is set to true again, they will
+  /// not be refocused, although they will be able to accept focus again.
+  ///
+  /// Does not affect the value of [canRequestFocus] on the descendants.
+  ///
+  /// See also:
+  ///
+  ///  * [ExcludeFocus], a widget that uses this property to conditionally
+  ///    exclude focus for a subtree.
+  ///  * [Focus], a widget that exposes this setting as a parameter.
+  ///  * [FocusTraversalGroup], a widget used to group together and configure
+  ///    the focus traversal policy for a widget subtree that also has an
+  ///    `descendantsAreFocusable` parameter that prevents its children from
+  ///    being focused.
+  bool get descendantsAreFocusable => _descendantsAreFocusable;
+  bool _descendantsAreFocusable;
+  @mustCallSuper
+  set descendantsAreFocusable(bool value) {
+    if (value == _descendantsAreFocusable) {
+      return;
+    }
+    if (!value && hasFocus) {
+      for (final FocusNode child in children) {
+        child.unfocus(disposition: UnfocusDisposition.previouslyFocusedChild);
+      }
+    }
+    _descendantsAreFocusable = value;
+    _manager?._markPropertiesChanged(this);
   }
 
   /// The context that was supplied to [attach].
@@ -640,38 +693,38 @@ class FocusNode with DiagnosticableTreeMixin, ChangeNotifier {
 
   /// Returns the size of the attached widget's [RenderObject], in logical
   /// units.
-  Size get size {
-    assert(
-        context != null,
-        "Tried to get the size of a focus node that didn't have its context set yet.\n"
-        'The context needs to be set before trying to evaluate traversal policies. This '
-        'is typically done with the attach method.');
-    return context.findRenderObject().semanticBounds.size;
-  }
+  ///
+  /// Size is the size of the transformed widget in global coordinates.
+  Size get size => rect.size;
 
   /// Returns the global offset to the upper left corner of the attached
   /// widget's [RenderObject], in logical units.
+  ///
+  /// Offset is the offset of the transformed widget in global coordinates.
   Offset get offset {
     assert(
         context != null,
         "Tried to get the offset of a focus node that didn't have its context set yet.\n"
-        'The context needs to be set before trying to evaluate traversal policies. This '
-        'is typically done with the attach method.');
+        'The context needs to be set before trying to evaluate traversal policies. '
+        'Setting the context is typically done with the attach method.');
     final RenderObject object = context.findRenderObject();
     return MatrixUtils.transformPoint(object.getTransformTo(null), object.semanticBounds.topLeft);
   }
 
   /// Returns the global rectangle of the attached widget's [RenderObject], in
   /// logical units.
+  ///
+  /// Rect is the rectangle of the transformed widget in global coordinates.
   Rect get rect {
     assert(
         context != null,
         "Tried to get the bounds of a focus node that didn't have its context set yet.\n"
-        'The context needs to be set before trying to evaluate traversal policies. This '
-        'is typically done with the attach method.');
+        'The context needs to be set before trying to evaluate traversal policies. '
+        'Setting the context is typically done with the attach method.');
     final RenderObject object = context.findRenderObject();
-    final Offset globalOffset = MatrixUtils.transformPoint(object.getTransformTo(null), object.semanticBounds.topLeft);
-    return globalOffset & object.semanticBounds.size;
+    final Offset topLeft = MatrixUtils.transformPoint(object.getTransformTo(null), object.semanticBounds.topLeft);
+    final Offset bottomRight = MatrixUtils.transformPoint(object.getTransformTo(null), object.semanticBounds.bottomRight);
+    return Rect.fromLTRB(topLeft.dx, topLeft.dy, bottomRight.dx, bottomRight.dy);
   }
 
   /// Removes the focus on this node by moving the primary focus to another node.
@@ -1082,6 +1135,7 @@ class FocusNode with DiagnosticableTreeMixin, ChangeNotifier {
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties.add(DiagnosticsProperty<BuildContext>('context', context, defaultValue: null));
+    properties.add(FlagProperty('descendantsAreFocusable', value: descendantsAreFocusable, ifFalse: 'DESCENDANTS UNFOCUSABLE', defaultValue: true));
     properties.add(FlagProperty('canRequestFocus', value: canRequestFocus, ifFalse: 'NOT FOCUSABLE', defaultValue: true));
     properties.add(FlagProperty('hasFocus', value: hasFocus && !hasPrimaryFocus, ifTrue: 'IN FOCUS PATH', defaultValue: false));
     properties.add(FlagProperty('hasPrimaryFocus', value: hasPrimaryFocus, ifTrue: 'PRIMARY FOCUS', defaultValue: false));
@@ -1147,6 +1201,7 @@ class FocusScopeNode extends FocusNode {
           debugLabel: debugLabel,
           onKey: onKey,
           canRequestFocus: canRequestFocus,
+          descendantsAreFocusable: true,
           skipTraversal: skipTraversal,
         );
 
@@ -1367,35 +1422,6 @@ class FocusManager with DiagnosticableTreeMixin, ChangeNotifier {
   /// the [WidgetsBinding] instance.
   static FocusManager get instance => WidgetsBinding.instance.focusManager;
 
-  bool get _lastInteractionWasTouch {
-    // Assume that if we're on one of these mobile platforms, or if there's no
-    // mouse connected, that the initial interaction will be touch-based, and
-    // that it's traditional mouse and keyboard on all others.
-    //
-    // This only affects the initial value: the ongoing value is updated to a
-    // known correct value as soon as any pointer events are received.
-    if (_lastInteractionWasTouchValue == null) {
-      switch (defaultTargetPlatform) {
-        case TargetPlatform.android:
-        case TargetPlatform.fuchsia:
-        case TargetPlatform.iOS:
-          _lastInteractionWasTouchValue = !WidgetsBinding.instance.mouseTracker.mouseIsConnected;
-          break;
-        case TargetPlatform.linux:
-        case TargetPlatform.macOS:
-        case TargetPlatform.windows:
-          _lastInteractionWasTouchValue = false;
-          break;
-      }
-    }
-    return _lastInteractionWasTouchValue;
-  }
-  bool _lastInteractionWasTouchValue;
-  set _lastInteractionWasTouch(bool value) {
-    _lastInteractionWasTouchValue = value;
-  }
-
-
   /// Sets the strategy by which [highlightMode] is determined.
   ///
   /// If set to [FocusHighlightStrategy.automatic], then the highlight mode will
@@ -1427,6 +1453,30 @@ class FocusManager with DiagnosticableTreeMixin, ChangeNotifier {
     _updateHighlightMode();
   }
 
+  static FocusHighlightMode get _defaultModeForPlatform {
+    // Assume that if we're on one of the mobile platforms, and there's no mouse
+    // connected, that the initial interaction will be touch-based, and that
+    // it's traditional mouse and keyboard on all other platforms.
+    //
+    // This only affects the initial value: the ongoing value is updated to a
+    // known correct value as soon as any pointer/keyboard events are received.
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+      case TargetPlatform.fuchsia:
+      case TargetPlatform.iOS:
+        if (WidgetsBinding.instance.mouseTracker.mouseIsConnected) {
+          return FocusHighlightMode.traditional;
+        }
+        return FocusHighlightMode.touch;
+      case TargetPlatform.linux:
+      case TargetPlatform.macOS:
+      case TargetPlatform.windows:
+        return FocusHighlightMode.traditional;
+    }
+    assert(false, 'Unhandled target platform $defaultTargetPlatform');
+    return null;
+  }
+
   /// Indicates the current interaction mode for focus highlights.
   ///
   /// The value returned depends upon the [highlightStrategy] used, and possibly
@@ -1438,8 +1488,14 @@ class FocusManager with DiagnosticableTreeMixin, ChangeNotifier {
   ///
   /// If [highlightMode] returns [FocusHighlightMode.traditional], then widgets should
   /// draw their focus highlight whenever they are focused.
-  FocusHighlightMode get highlightMode => _highlightMode;
-  FocusHighlightMode _highlightMode = FocusHighlightMode.touch;
+  // Don't want to set _highlightMode here, since it's possible for the target
+  // platform to change (especially in tests).
+  FocusHighlightMode get highlightMode => _highlightMode ?? _defaultModeForPlatform;
+  FocusHighlightMode _highlightMode;
+
+  // If set, indicates if the last interaction detected was touch or not.
+  // If null, no interactions have occurred yet.
+  bool _lastInteractionWasTouch;
 
   // Update function to be called whenever the state relating to highlightMode
   // changes.
@@ -1447,6 +1503,13 @@ class FocusManager with DiagnosticableTreeMixin, ChangeNotifier {
     FocusHighlightMode newMode;
     switch (highlightStrategy) {
       case FocusHighlightStrategy.automatic:
+        if (_lastInteractionWasTouch == null) {
+          // If we don't have any information about the last interaction yet,
+          // then just rely on the default value for the platform, which will be
+          // determined based on the target platform if _highlightMode is not
+          // set.
+          return;
+        }
         if (_lastInteractionWasTouch) {
           newMode = FocusHighlightMode.touch;
         } else {
@@ -1460,8 +1523,12 @@ class FocusManager with DiagnosticableTreeMixin, ChangeNotifier {
         newMode = FocusHighlightMode.traditional;
         break;
     }
-    if (newMode != _highlightMode) {
-      _highlightMode = newMode;
+    // We can't just compare newMode with _highlightMode here, since
+    // _highlightMode could be null, so we want to compare with the return value
+    // for the getter, since that's what clients will be looking at.
+    final FocusHighlightMode oldMode = highlightMode;
+    _highlightMode = newMode;
+    if (highlightMode != oldMode) {
       _notifyHighlightModeListeners();
     }
   }
@@ -1485,7 +1552,7 @@ class FocusManager with DiagnosticableTreeMixin, ChangeNotifier {
     for (final ValueChanged<FocusHighlightMode> listener in localListeners) {
       try {
         if (_listeners.contains(listener)) {
-          listener(_highlightMode);
+          listener(highlightMode);
         }
       } catch (exception, stack) {
         InformationCollector collector;
@@ -1517,20 +1584,21 @@ class FocusManager with DiagnosticableTreeMixin, ChangeNotifier {
   final FocusScopeNode rootScope = FocusScopeNode(debugLabel: 'Root Focus Scope');
 
   void _handlePointerEvent(PointerEvent event) {
-    bool currentInteractionIsTouch;
+    FocusHighlightMode expectedMode;
     switch (event.kind) {
       case PointerDeviceKind.touch:
       case PointerDeviceKind.stylus:
       case PointerDeviceKind.invertedStylus:
-        currentInteractionIsTouch = true;
+        _lastInteractionWasTouch = true;
+        expectedMode = FocusHighlightMode.touch;
         break;
       case PointerDeviceKind.mouse:
       case PointerDeviceKind.unknown:
-        currentInteractionIsTouch = false;
+        _lastInteractionWasTouch = false;
+        expectedMode = FocusHighlightMode.traditional;
         break;
     }
-    if (_lastInteractionWasTouch != currentInteractionIsTouch) {
-      _lastInteractionWasTouch = currentInteractionIsTouch;
+    if (expectedMode != highlightMode) {
       _updateHighlightMode();
     }
   }
@@ -1538,10 +1606,8 @@ class FocusManager with DiagnosticableTreeMixin, ChangeNotifier {
   void _handleRawKeyEvent(RawKeyEvent event) {
     // Update highlightMode first, since things responding to the keys might
     // look at the highlight mode, and it should be accurate.
-    if (_lastInteractionWasTouch) {
-      _lastInteractionWasTouch = false;
-      _updateHighlightMode();
-    }
+    _lastInteractionWasTouch = false;
+    _updateHighlightMode();
 
     assert(_focusDebug('Received key event ${event.logicalKey}'));
     // Walk the current focus from the leaf to the root, calling each one's

@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 import 'package:file/memory.dart';
-import 'package:mockito/mockito.dart';
-import 'package:platform/platform.dart';
-
 import 'package:flutter_tools/src/base/file_system.dart';
 import 'package:flutter_tools/src/base/io.dart' show ProcessException;
 import 'package:flutter_tools/src/base/logger.dart';
+import 'package:flutter_tools/src/base/platform.dart';
 import 'package:flutter_tools/src/convert.dart';
 import 'package:flutter_tools/src/windows/visual_studio.dart';
+import 'package:mockito/mockito.dart';
 
 import '../../src/common.dart';
 import '../../src/context.dart';
@@ -387,7 +386,7 @@ void main() {
       final VisualStudioFixture fixture = setUpVisualStudio();
       final VisualStudio visualStudio = fixture.visualStudio;
 
-      final Map<String, dynamic> response = Map<String, dynamic>.from(_defaultResponse)
+      final Map<String, dynamic> response = Map<String, dynamic>.of(_defaultResponse)
         ..['isPrerelease'] = true;
       setMockCompatibleVisualStudioInstallation(
         null,
@@ -448,7 +447,7 @@ void main() {
         fixture.processManager,
       );
 
-      final Map<String, dynamic> response = Map<String, dynamic>.from(_defaultResponse)
+      final Map<String, dynamic> response = Map<String, dynamic>.of(_defaultResponse)
         ..['isComplete'] = false;
       setMockAnyVisualStudioInstallation(
         response,
@@ -476,7 +475,7 @@ void main() {
         fixture.processManager,
       );
 
-      final Map<String, dynamic> response = Map<String, dynamic>.from(_defaultResponse)
+      final Map<String, dynamic> response = Map<String, dynamic>.of(_defaultResponse)
         ..['isLaunchable'] = false;
       setMockAnyVisualStudioInstallation(
         response,
@@ -503,7 +502,7 @@ void main() {
         fixture.processManager,
       );
 
-      final Map<String, dynamic> response = Map<String, dynamic>.from(_defaultResponse)
+      final Map<String, dynamic> response = Map<String, dynamic>.of(_defaultResponse)
         ..['isRebootRequired'] = true;
       setMockAnyVisualStudioInstallation(
         response,
@@ -565,7 +564,7 @@ void main() {
       final VisualStudioFixture fixture = setUpVisualStudio();
       final VisualStudio visualStudio = fixture.visualStudio;
 
-      final Map<String, dynamic> response = Map<String, dynamic>.from(_defaultResponse)
+      final Map<String, dynamic> response = Map<String, dynamic>.of(_defaultResponse)
         ..['isRebootRequired'] = true;
       setMockCompatibleVisualStudioInstallation(
         response,
@@ -585,7 +584,7 @@ void main() {
       final VisualStudioFixture fixture = setUpVisualStudio();
       final VisualStudio visualStudio = fixture.visualStudio;
 
-      final Map<String, dynamic> response = Map<String, dynamic>.from(_defaultResponse)
+      final Map<String, dynamic> response = Map<String, dynamic>.of(_defaultResponse)
         ..['isRebootRequired'] = true;
       setMockCompatibleVisualStudioInstallation(
         response,

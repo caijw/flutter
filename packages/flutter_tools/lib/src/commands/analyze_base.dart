@@ -6,13 +6,13 @@ import 'dart:async';
 
 import 'package:args/args.dart';
 import 'package:meta/meta.dart';
-import 'package:platform/platform.dart';
 import 'package:process/process.dart';
 import 'package:yaml/yaml.dart' as yaml;
 
 import '../base/common.dart';
 import '../base/file_system.dart';
 import '../base/logger.dart';
+import '../base/platform.dart';
 import '../base/terminal.dart';
 import '../base/utils.dart';
 import '../cache.dart';
@@ -28,6 +28,7 @@ abstract class AnalyzeBase {
     @required this.platform,
     @required this.processManager,
     @required this.terminal,
+    @required this.experiments,
   });
 
   /// The parsed argument results for execution.
@@ -46,6 +47,8 @@ abstract class AnalyzeBase {
   final Platform platform;
   @protected
   final AnsiTerminal terminal;
+  @protected
+  final List<String> experiments;
 
   /// Called by [AnalyzeCommand] to start the analysis process.
   Future<void> analyze();

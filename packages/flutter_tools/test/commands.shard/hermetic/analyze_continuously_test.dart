@@ -4,15 +4,17 @@
 
 import 'dart:async';
 
+import 'package:file/memory.dart';
 import 'package:flutter_tools/src/base/file_system.dart';
 import 'package:flutter_tools/src/base/io.dart';
 import 'package:flutter_tools/src/base/logger.dart';
+import 'package:flutter_tools/src/base/platform.dart';
 import 'package:flutter_tools/src/base/terminal.dart';
 import 'package:flutter_tools/src/dart/analysis.dart';
 import 'package:flutter_tools/src/dart/pub.dart';
 import 'package:flutter_tools/src/dart/sdk.dart';
+import 'package:flutter_tools/src/globals.dart' as globals;
 import 'package:flutter_tools/src/runner/flutter_command_runner.dart';
-import 'package:platform/platform.dart';
 import 'package:process/process.dart';
 
 import '../../src/common.dart';
@@ -29,7 +31,7 @@ void main() {
 
   setUp(() {
     platform = const LocalPlatform();
-    fileSystem = const LocalFileSystem();
+    fileSystem = LocalFileSystem.instance;
     platform = const LocalPlatform();
     processManager = const LocalProcessManager();
     terminal = AnsiTerminal(platform: platform, stdio: Stdio());
@@ -64,7 +66,15 @@ void main() {
     testUsingContext('AnalysisServer success', () async {
       _createSampleProject(tempDir);
 
-      await const Pub().get(context: PubContext.flutterTests, directory: tempDir.path);
+      final Pub pub = Pub(
+        fileSystem: fileSystem,
+        logger: logger,
+        processManager: processManager,
+        platform: const LocalPlatform(),
+        botDetector: globals.botDetector,
+        usage: globals.flutterUsage,
+      );
+      await pub.get(context: PubContext.flutterTests, directory: tempDir.path);
 
       server = AnalysisServer(dartSdkPath, <String>[tempDir.path],
         fileSystem: fileSystem,
@@ -72,6 +82,7 @@ void main() {
         processManager: processManager,
         logger: logger,
         terminal: terminal,
+        experiments: <String>[],
       );
 
       int errorCount = 0;
@@ -88,7 +99,15 @@ void main() {
   testUsingContext('AnalysisServer errors', () async {
     _createSampleProject(tempDir, brokenCode: true);
 
-    await const Pub().get(context: PubContext.flutterTests, directory: tempDir.path);
+    final Pub pub = Pub(
+      fileSystem: fileSystem,
+      logger: logger,
+      processManager: processManager,
+      platform: const LocalPlatform(),
+      usage: globals.flutterUsage,
+      botDetector: globals.botDetector,
+    );
+    await pub.get(context: PubContext.flutterTests, directory: tempDir.path);
 
     server = AnalysisServer(dartSdkPath, <String>[tempDir.path],
       fileSystem: fileSystem,
@@ -96,6 +115,7 @@ void main() {
       processManager: processManager,
       logger: logger,
       terminal: terminal,
+      experiments: <String>[],
     );
 
     int errorCount = 0;
@@ -119,6 +139,7 @@ void main() {
       processManager: processManager,
       logger: logger,
       terminal: terminal,
+      experiments: <String>[],
     );
 
     int errorCount = 0;
@@ -129,5 +150,40 @@ void main() {
     await server.start();
     await onDone;
     expect(errorCount, 0);
+  });
+
+  testWithoutContext('Can forward null-safety experiments to the AnalysisServer', () async {
+    final Completer<void> completer = Completer<void>();
+    final StreamController<List<int>> stdin = StreamController<List<int>>();
+    const String fakeSdkPath = 'dart-sdk';
+    final FakeCommand fakeCommand = FakeCommand(
+      command: const <String>[
+        'dart-sdk/bin/dart',
+        'dart-sdk/bin/snapshots/analysis_server.dart.snapshot',
+        '--enable-experiment',
+        'non-nullable',
+        '--disable-server-feature-completion',
+        '--disable-server-feature-search',
+        '--sdk',
+        'dart-sdk',
+      ],
+      completer: completer,
+      stdin: IOSink(stdin.sink),
+    );
+
+    server = AnalysisServer(fakeSdkPath, <String>[''],
+      fileSystem: MemoryFileSystem.test(),
+      platform: FakePlatform(),
+      processManager: FakeProcessManager.list(<FakeCommand>[
+        fakeCommand,
+      ]),
+      logger: BufferLogger.test(),
+      terminal: Terminal.test(),
+      experiments: <String>[
+        'non-nullable'
+      ],
+    );
+
+    await server.start();
   });
 }

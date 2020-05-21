@@ -42,6 +42,12 @@ void main() {
       when(mockProcessInfo.maxRss).thenReturn(10);
     });
 
+    testUsingContext('help text contains global options', () {
+      final FakeCommand fake = FakeCommand();
+      createTestCommandRunner(fake);
+      expect(fake.usage, contains('Global options:\n'));
+    });
+
     testUsingContext('honors shouldUpdateCache false', () async {
       final DummyFlutterCommand flutterCommand = DummyFlutterCommand(shouldUpdateCache: false);
       await flutterCommand.run();
@@ -423,10 +429,9 @@ void main() {
   });
 }
 
-
 class FakeCommand extends FlutterCommand {
   @override
-  String get description => null;
+  String get description => 'A fake command';
 
   @override
   String get name => 'fake';
@@ -445,7 +450,7 @@ class FakeSignals implements Signals {
   FakeSignals({
     this.subForSigTerm,
     List<ProcessSignal> exitSignals,
-  }) : delegate = Signals(exitSignals: exitSignals);
+  }) : delegate = Signals.test(exitSignals: exitSignals);
 
   final ProcessSignal subForSigTerm;
   final Signals delegate;

@@ -6,13 +6,13 @@ import 'dart:async';
 
 import 'package:args/args.dart';
 import 'package:meta/meta.dart';
-import 'package:platform/platform.dart';
 import 'package:process/process.dart';
 
 import '../base/common.dart';
 import '../base/file_system.dart';
 import '../base/io.dart';
 import '../base/logger.dart';
+import '../base/platform.dart';
 import '../base/terminal.dart';
 import '../base/utils.dart';
 import '../cache.dart';
@@ -27,6 +27,7 @@ class AnalyzeContinuously extends AnalyzeBase {
     @required AnsiTerminal terminal,
     @required Platform platform,
     @required ProcessManager processManager,
+    @required List<String> experiments,
   }) : super(
         argResults,
         repoPackages: repoPackages,
@@ -36,6 +37,7 @@ class AnalyzeContinuously extends AnalyzeBase {
         platform: platform,
         terminal: terminal,
         processManager: processManager,
+        experiments: experiments,
       );
 
   String analysisTarget;
@@ -74,6 +76,7 @@ class AnalyzeContinuously extends AnalyzeBase {
       platform: platform,
       processManager: processManager,
       terminal: terminal,
+      experiments: experiments,
     );
     server.onAnalyzing.listen((bool isAnalyzing) => _handleAnalysisStatus(server, isAnalyzing));
     server.onErrors.listen(_handleAnalysisErrors);

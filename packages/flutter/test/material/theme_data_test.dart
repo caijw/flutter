@@ -216,7 +216,6 @@ void main() {
     );
 
     final ThemeData theme = ThemeData.raw(
-      brightness: Brightness.dark,
       visualDensity: const VisualDensity(),
       primaryColor: Colors.black,
       primaryColorBrightness: Brightness.dark,
@@ -280,6 +279,8 @@ void main() {
       bannerTheme: const MaterialBannerThemeData(backgroundColor: Colors.black),
       dividerTheme: const DividerThemeData(color: Colors.black),
       buttonBarTheme: const ButtonBarThemeData(alignment: MainAxisAlignment.start),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(type: BottomNavigationBarType.fixed),
+      fixTextFieldOutlineLabel: false,
     );
 
     final SliderThemeData otherSliderTheme = SliderThemeData.fromPrimaryColors(
@@ -296,7 +297,6 @@ void main() {
     );
 
     final ThemeData otherTheme = ThemeData.raw(
-      brightness: Brightness.light,
       visualDensity: const VisualDensity(),
       primaryColor: Colors.white,
       primaryColorBrightness: Brightness.light,
@@ -360,10 +360,11 @@ void main() {
       bannerTheme: const MaterialBannerThemeData(backgroundColor: Colors.white),
       dividerTheme: const DividerThemeData(color: Colors.white),
       buttonBarTheme: const ButtonBarThemeData(alignment: MainAxisAlignment.end),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(type: BottomNavigationBarType.shifting),
+      fixTextFieldOutlineLabel: true,
     );
 
     final ThemeData themeDataCopy = theme.copyWith(
-      brightness: otherTheme.brightness,
       primaryColor: otherTheme.primaryColor,
       primaryColorBrightness: otherTheme.primaryColorBrightness,
       primaryColorLight: otherTheme.primaryColorLight,
@@ -426,6 +427,8 @@ void main() {
       bannerTheme: otherTheme.bannerTheme,
       dividerTheme: otherTheme.dividerTheme,
       buttonBarTheme: otherTheme.buttonBarTheme,
+      bottomNavigationBarTheme: otherTheme.bottomNavigationBarTheme,
+      fixTextFieldOutlineLabel: otherTheme.fixTextFieldOutlineLabel,
     );
 
     expect(themeDataCopy.brightness, equals(otherTheme.brightness));
@@ -493,6 +496,8 @@ void main() {
     expect(themeDataCopy.bannerTheme, equals(otherTheme.bannerTheme));
     expect(themeDataCopy.dividerTheme, equals(otherTheme.dividerTheme));
     expect(themeDataCopy.buttonBarTheme, equals(otherTheme.buttonBarTheme));
+    expect(themeDataCopy.bottomNavigationBarTheme, equals(otherTheme.bottomNavigationBarTheme));
+    expect(themeDataCopy.fixTextFieldOutlineLabel, equals(otherTheme.fixTextFieldOutlineLabel));
   });
 
   testWidgets('ThemeData.toString has less than 200 characters output', (WidgetTester tester) async {
@@ -508,5 +513,28 @@ void main() {
     final ThemeData lightTheme = ThemeData.from(colorScheme: lightColors);
 
     expect(lightTheme.toString().length, lessThan(200));
+  });
+
+  testWidgets('ThemeData brightness parameter overrides ColorScheme brightness', (WidgetTester tester) async {
+    const ColorScheme lightColors = ColorScheme.light();
+    expect(() => ThemeData(colorScheme: lightColors, brightness: Brightness.dark), throwsAssertionError);
+  });
+
+  testWidgets('ThemeData.copyWith brightness parameter overrides ColorScheme brightness', (WidgetTester tester) async {
+    const ColorScheme lightColors = ColorScheme.light();
+    final ThemeData theme = ThemeData.from(colorScheme: lightColors).copyWith(brightness: Brightness.dark);
+
+    // The brightness parameter only overrides ColorScheme.brightness.
+    expect(theme.brightness, equals(Brightness.dark));
+    expect(theme.colorScheme.brightness, equals(Brightness.dark));
+    expect(theme.primaryColor, equals(lightColors.primary));
+    expect(theme.accentColor, equals(lightColors.secondary));
+    expect(theme.cardColor, equals(lightColors.surface));
+    expect(theme.backgroundColor, equals(lightColors.background));
+    expect(theme.canvasColor, equals(lightColors.background));
+    expect(theme.scaffoldBackgroundColor, equals(lightColors.background));
+    expect(theme.dialogBackgroundColor, equals(lightColors.background));
+    expect(theme.errorColor, equals(lightColors.error));
+    expect(theme.applyElevationOverlayColor, isFalse);
   });
 }

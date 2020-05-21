@@ -17,7 +17,6 @@ import 'build_system/depfile.dart';
 import 'build_system/targets/dart.dart';
 import 'build_system/targets/icon_tree_shaker.dart';
 import 'cache.dart';
-import 'convert.dart';
 import 'dart/package_map.dart';
 import 'devfs.dart';
 import 'globals.dart' as globals;
@@ -31,6 +30,13 @@ String get defaultDepfilePath => globals.fs.path.join(getBuildDirectory(), 'snap
 String getDefaultApplicationKernelPath({ @required bool trackWidgetCreation }) {
   return getKernelPathForTransformerOptions(
     globals.fs.path.join(getBuildDirectory(), 'app.dill'),
+    trackWidgetCreation: trackWidgetCreation,
+  );
+}
+
+String getDefaultCachedKernelPath({ @required bool trackWidgetCreation }) {
+  return getKernelPathForTransformerOptions(
+    globals.fs.path.join(getBuildDirectory(), 'cache.dill'),
     trackWidgetCreation: trackWidgetCreation,
   );
 }
@@ -75,7 +81,7 @@ class BundleBuilder {
     mainPath ??= defaultMainPath;
     depfilePath ??= defaultDepfilePath;
     assetDirPath ??= getAssetBuildDirectory();
-    packagesPath ??= globals.fs.path.absolute(PackageMap.globalPackagesPath);
+    packagesPath ??= globals.fs.path.absolute(globalPackagesPath);
     final FlutterProject flutterProject = FlutterProject.current();
     await buildWithAssemble(
       buildMode: buildInfo.mode,
@@ -123,6 +129,9 @@ Future<void> buildWithAssemble({
     buildDir: flutterProject.dartTool.childDirectory('flutter_build'),
     cacheDir: globals.cache.getRoot(),
     flutterRootDir: globals.fs.directory(Cache.flutterRoot),
+    engineVersion: globals.artifacts.isLocalEngine
+      ? null
+      : globals.flutterVersion.engineRevision,
     defines: <String, String>{
       kTargetFile: mainPath,
       kBuildMode: getNameForBuildMode(buildMode),
@@ -130,7 +139,7 @@ Future<void> buildWithAssemble({
       kTrackWidgetCreation: trackWidgetCreation?.toString(),
       kIconTreeShakerFlag: treeShakeIcons ? 'true' : null,
       if (dartDefines != null && dartDefines.isNotEmpty)
-        kDartDefines: jsonEncode(dartDefines),
+        kDartDefines: dartDefines.join(','),
     },
     artifacts: globals.artifacts,
     fileSystem: globals.fs,
@@ -161,7 +170,6 @@ Future<void> buildWithAssemble({
     final DepfileService depfileService = DepfileService(
       fileSystem: globals.fs,
       logger: globals.logger,
-      platform: globals.platform,
     );
     depfileService.writeToFile(depfile, outputDepfile);
   }
@@ -175,7 +183,7 @@ Future<AssetBundle> buildAssets({
   bool reportLicensedPackages = false,
 }) async {
   assetDirPath ??= getAssetBuildDirectory();
-  packagesPath ??= globals.fs.path.absolute(PackageMap.globalPackagesPath);
+  packagesPath ??= globals.fs.path.absolute(globalPackagesPath);
 
   // Build the asset bundle.
   final AssetBundle assetBundle = AssetBundleFactory.instance.createBundle();
