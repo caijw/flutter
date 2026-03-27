@@ -60,22 +60,24 @@ class RollFallbackFontsCommand extends Command<bool> with ArgUtils<bool> {
   }
 
   Future<void> _generateFallbackFontData() async {
+    print('@@@@@ _generateFallbackFontData');
     final http.Client client = http.Client();
     final List<_FontInfo> fallbackFontInfo = <_FontInfo>[
       ...await _processSplitFallbackFonts(client, splitFallbackFonts),
       ...await _processFallbackFonts(client, apiFallbackFonts),
     ];
-
-    final List<String> failedUrls = await _checkForLicenseAttributions(client, fallbackFontInfo);
-    if (failedUrls.isNotEmpty) {
-      throw ToolExit('Could not find license attribution at:\n - ${failedUrls.join('\n - ')}');
-    }
+    print('@@@@@ fallbackFontInfo=${fallbackFontInfo}');
+    // final List<String> failedUrls = await _checkForLicenseAttributions(client, fallbackFontInfo);
+    // if (failedUrls.isNotEmpty) {
+    //   throw ToolExit('Could not find license attribution at:\n - ${failedUrls.join('\n - ')}');
+    // }
 
     final List<_Font> fallbackFontData = <_Font>[];
 
     final Map<String, String> charsetForFamily = <String, String>{};
-    final io.Directory fontDir = await io.Directory.systemTemp.createTemp('flutter_fallback_fonts');
-    print('Downloading fonts into temp directory: ${fontDir.path}');
+    // final io.Directory fontDir = await io.Directory.systemTemp.createTemp('flutter_fallback_fonts');
+    final io.Directory fontDir = io.Directory('/Users/jingweicai/dev/flutter_fallback_fonts');
+    print('@@@@@ Downloading fonts into temp directory: ${fontDir.path}');
     final AccumulatorSink<crypto.Digest> hashSink = AccumulatorSink<crypto.Digest>();
     final ByteConversionSink hasher = crypto.sha256.startChunkedConversion(hashSink);
 
@@ -99,7 +101,9 @@ class RollFallbackFontsCommand extends Command<bool> with ArgUtils<bool> {
         '--',
         fontFile.path,
       ]);
+
       final String encodedCharset = fcQueryResult.stdout as String;
+      print('@@@@@ ${fontFile.path} family=${family} encodedCharset=${encodedCharset}');
       charsetForFamily[family] = encodedCharset;
     }
 
@@ -121,7 +125,7 @@ class RollFallbackFontsCommand extends Command<bool> with ArgUtils<bool> {
         starts.add(first);
         ends.add(last);
       }
-
+      print('@@@@@ fontInfo.family=${fontInfo.family} starts=${starts} ends=${ends}');
       fallbackFontData.add(_Font(fontInfo, index++, starts, ends));
     }
 

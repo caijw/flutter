@@ -165,6 +165,7 @@ if (enable_unittests) {
       "geometry/dl_rtree_unittests.cc",
       "skia/dl_sk_conversions_unittests.cc",
       "skia/dl_sk_paint_dispatcher_unittests.cc",
+      "skia/skia_api_unittests.cc",
       "utils/dl_accumulation_rect_unittests.cc",
       "utils/dl_matrix_clip_tracker_unittests.cc",
     ]
@@ -176,6 +177,7 @@ if (enable_unittests) {
       "//flutter/impeller/typographer/backends/skia:typographer_skia_backend",
       "//flutter/testing",
       "//flutter/testing:skia",
+      "//flutter/txt",
     ]
 
     if (!defined(defines)) {
