@@ -486,8 +486,13 @@ class _FallbackFontDownloadQueue {
     }
 
     if (pendingFonts.isEmpty) {
-      fallbackManager._registry.updateFallbackFontFamilies(fallbackManager.globalFontFallbacks);
-      sendFontChangeMessage();
+      // Only notify the engine if at least one font was successfully downloaded.
+      // This prevents an infinite loop where a download failure triggers a
+      // relayout, which in turn triggers another failed download attempt.
+      if (downloadedFontFamilies.isNotEmpty) {
+        fallbackManager._registry.updateFallbackFontFamilies(fallbackManager.globalFontFallbacks);
+        sendFontChangeMessage();
+      }
       final Completer<void> idleCompleter = _idleCompleter!;
       _idleCompleter = null;
       idleCompleter.complete();

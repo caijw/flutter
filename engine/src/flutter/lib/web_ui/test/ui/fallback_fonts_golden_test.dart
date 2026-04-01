@@ -599,6 +599,35 @@ void testMain() {
       }
     });
 
+    // Regression test for font download failure infinite loop.
+    // When all fallback font downloads fail (e.g., due to network issues),
+    // the system should not enter an infinite loop where sendFontChangeMessage()
+    // triggers a relayout, which triggers another download attempt.
+    test('does not loop infinitely when all font downloads fail', () async {
+      expect(renderer.fontCollection.fontFallbackManager!.globalFontFallbacks, <String>['Roboto']);
+
+      // Point to a non-existent path so all font downloads fail.
+      debugOverrideJsConfiguration(
+        <String, Object?>{'fontFallbackBaseUrl': 'assets/non_existent_path/'}.jsify()
+            as JsFlutterConfiguration?,
+      );
+
+      // Render text that requires fallback fonts. This should trigger
+      // a font download attempt that will fail.
+      final pb = ui.ParagraphBuilder(ui.ParagraphStyle());
+      pb.addText('مرحبا');
+      pb.build().layout(const ui.ParagraphConstraints(width: 1000));
+
+      // If the fix is not present, this will hang forever due to the infinite
+      // loop: download failure -> sendFontChangeMessage -> relayout ->
+      // download failure -> ...
+      await renderer.fontCollection.fontFallbackManager!.debugWhenIdle();
+
+      // No new fallback fonts should have been registered since all downloads
+      // failed.
+      expect(renderer.fontCollection.fontFallbackManager!.globalFontFallbacks, <String>['Roboto']);
+    });
+
     group('when fallback fonts are disabled', () {
       setUp(() {
         ui_web.TestEnvironment.setUp(const ui_web.TestEnvironment(disableFontFallbacks: true));
