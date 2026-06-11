@@ -879,3 +879,177 @@ third_party/
 **对照参考（设计灵感来源）**：
 - `engine/src/flutter/skwasm/` —— 已有的"绕过 embedder、直接接 flow 层"实现，本方案 embedder 设计参考它
 - React Native JSI（Hermes/HostObject 模式）—— `ui::js::Runtime` 抽象层设计参考它
+
+---
+
+## 15. PoC 阶段 0：先把"砍 Dart 出一帧"打通
+
+> 整套方案的最大未知 = **能不能在不依赖 Dart runtime 的前提下，复用 engine 的 flow / DisplayList / Rasterizer 这层 C++ 底座，独立驱动出一帧画面到 macOS 窗口**。
+> 这个未知不验证，后面 8–12 人 × 24 月的投入全是空中楼阁。
+> PoC 目标就一件事：**用最小代码量，证明这条路通**。其它（JS 引擎、三棵树、动态化协议）阶段 0 一律不碰。
+
+### 15.1 PoC 一句话目标
+
+**1.5 个月，2 人，在 macOS 上跑出一个窗口，里面画一个红色矩形 + "Hello" 文字 + 一个能响应点击变色的方块。整个进程内：零 Dart VM、零 dart 字节码、零 `RuntimeController`、零 `embedder.h` 的 `FlutterEngineRun` 调用。**
+
+达成这个目标 = 验证 4 件事：
+
+| 验证点 | 说明 |
+|---|---|
+| **V1 渲染底座可独立** | `flow::LayerTree` + `DisplayListBuilder` + `Rasterizer` 可以脱离 `shell::Engine` / `RuntimeController` 直接驱动 |
+| **V2 vsync 可独立接** | 不通过 `shell::Shell`，用 `CVDisplayLink`（macOS）直接喂 `Rasterizer::Draw` |
+| **V3 Surface 可独立挂** | Metal `CAMetalLayer` 直接对接 `EmbedderSurfaceMetalSkia` 等价物（或更底层的 `Surface` 实现） |
+| **V4 输入可独立路由** | macOS NSEvent → 自写一个最小 hit-test，证明事件链不依赖 `PlatformView`/`Engine` |
+
+> 任何一项不通过，都要在 PoC 内当场修复或承认架构改动量；不要把问题留到阶段 1。
+
+### 15.2 PoC 不做什么（关键约束）
+
+为了保证 1.5 月可交付，**以下东西 PoC 阶段 0 一律不做**：
+
+- ❌ 不接 quickjs、不接 v8、不写任何 binding。业务硬编码 C++。
+- ❌ 不实现 Widget/Element/RenderObject 三棵树。直接手搓 `DisplayListBuilder` 调用。
+- ❌ 不做 layout 算法（Flex/Stack 都不做）。坐标硬编码。
+- ❌ 不做手势 arena。点击只用最朴素的 AABB hit-test。
+- ❌ 不做 GestureRecognizer / Animation / Ticker / Text shaping 复杂化。文字用 `SkParagraphBuilder` 最简调用。
+- ❌ 不跨平台。**只 macOS**（开发机 = 目标机，调试链最短）。
+- ❌ 不动 BUILD.gn 的全局结构。新代码塞在 `engine/src/flutter/poc_cpp_kernel/` 子目录，独立 `BUILD.gn`，走 `gn gen` 单独编译。
+
+### 15.3 PoC 物理目录
+
+```
+engine/src/flutter/poc_cpp_kernel/        # 全部新代码在此
+├── BUILD.gn                              # 单独 target，不污染主图
+├── README.md
+├── app/
+│   ├── main.mm                           # macOS 入口：NSApplication + NSWindow + CAMetalLayer
+│   └── poc_scene.cc                      # PoC 业务：硬编码 3 个"控件"
+├── kernel_min/                           # 极简 C++ 内核（PoC 专用，不是最终设计）
+│   ├── poc_node.h / .cc                  # 一个简化"节点"：{ rect, kind, props, on_tap }
+│   ├── poc_painter.h / .cc               # 节点 → DisplayListBuilder
+│   ├── poc_hittest.h / .cc               # AABB 点击命中
+│   └── poc_pipeline.h / .cc              # 调度：input → mark dirty → repaint → submit
+├── platform_mac/
+│   ├── metal_surface.h / .mm             # 复用 EmbedderSurfaceMetalSkia 的最小骨架
+│   ├── vsync_cvdisplaylink.h / .mm       # CVDisplayLink → 触发 PocPipeline::Tick
+│   └── input_nsview.h / .mm              # NSEvent → PocPipeline::OnPointer
+└── third_party_glue/
+    └── rasterizer_adapter.h / .cc        # 直接 new flutter::Rasterizer，绕开 Shell
+```
+
+> PoC 完成后这个目录会**整体废弃**（不是阶段 1 的基础），它的价值只在于"证明可行"。阶段 1 重写时会按 §3 设计正式建 `ui-kernel/`。
+
+### 15.4 PoC 渲染主链路（一定要走通的代码路径）
+
+```
+[CVDisplayLink callback (raster thread)]
+        │
+        ▼
+PocPipeline::Tick(now)
+        │  if dirty:
+        ▼
+PocPainter::PaintScene(scene_root) ──► DisplayListBuilder
+        │                              │
+        │                              ▼
+        │                          DisplayList (sk_sp)
+        ▼
+LayerTree (1 个 PictureLayer 包住整张 DisplayList)        ◄── 阶段 0 不分 layer
+        │
+        ▼
+flutter::Rasterizer::Draw(layer_tree)                     ◄── 关键复用点
+        │
+        ▼
+EmbedderSurfaceMetalSkia 的等价 Surface ──► CAMetalLayer ──► 屏幕
+```
+
+**3 个关键验证锚点（PoC 必须 hands-on 触碰）**：
+
+1. **`flutter::Rasterizer` 的最小构造**
+   `engine/src/flutter/shell/common/rasterizer.h` 里 `Rasterizer` 接受 `Delegate&`。需要写一个 `PocRasterizerDelegate : Rasterizer::Delegate`，stub 出所有虚函数（大部分返回默认值），重点实现 `GetTaskRunners()` 和 `OnFrameRasterized()`。
+   **这一步若卡住，说明 Rasterizer 与 Shell 的耦合比预想深，需要重新评估 §2.2 里"砍 shell 保 rasterizer"的可行性。**
+
+2. **Surface 直挂 CAMetalLayer**
+   参考 `engine/src/flutter/shell/platform/embedder/embedder_surface_metal_skia.mm` 的内部组装方式，**复制一份精简版**到 PoC，跳过 embedder 的 `FlutterMetalRendererConfig` 那层 C 接口。验证可以直接 `new` 这个 surface 喂给 `Rasterizer`。
+
+3. **DisplayListBuilder → 真实可见像素**
+   ```cpp
+   DisplayListBuilder b(SkRect::MakeWH(800, 600));
+   b.DrawRect(SkRect::MakeXYWH(100, 100, 200, 150),
+              DlPaint().setColor(DlColor::kRed()));
+   sk_sp<DisplayList> dl = b.Build();
+   ```
+   能在窗口里看到红方块 = V1+V3 同时通过。
+
+### 15.5 PoC 的极简"控件"模型
+
+**不要用三棵树**。PoC 用 1 棵树、1 个节点类型：
+
+```cpp
+// kernel_min/poc_node.h
+struct PocNode {
+  enum Kind { kBox, kText, kTapBox };
+  Kind kind;
+  SkRect rect;                      // 绝对坐标，不做 layout
+  uint32_t color;                   // kBox / kTapBox 的填充色
+  std::string text;                 // kText 的文字
+  std::function<void()> on_tap;     // kTapBox 的回调（点击时切换 color）
+  std::vector<std::unique_ptr<PocNode>> children;  // 仅用于组合，不参与布局
+};
+```
+
+PoC 业务（`poc_scene.cc`）硬编码 3 个节点：
+
+```cpp
+auto root = std::make_unique<PocNode>(...);
+root->children.push_back(MakeBox({100,100,300,250}, 0xFFFF0000));   // 红方块（验证 V1）
+root->children.push_back(MakeText({100,300}, "Hello PoC"));         // 文字（验证 V1+text）
+auto tap = MakeTapBox({400,100,600,250}, 0xFF00AA00);
+tap->on_tap = [&] { tap->color ^= 0x00FFFFFF; pipeline.MarkDirty(); };
+root->children.push_back(std::move(tap));                           // 点击变色（验证 V4）
+```
+
+`PocPainter::PaintScene` 就是一个 DFS：每种 kind 调对应的 `DlCanvas` API。**不超过 200 行代码**。
+
+### 15.6 时间盒（1.5 个月，2 人）
+
+| 周 | 里程碑 | 产出 | 通过标准 |
+|---|---|---|---|
+| **W1** | 摸清 Rasterizer 真实依赖 | 一份"`Rasterizer::Delegate` 接口拆解笔记 + stub 草稿" | 能列出每个虚函数是否真的需要 / 能否返默认 |
+| **W2** | 空窗口 + Metal surface | macOS 窗口能起来，CAMetalLayer 接到自写 Surface，每帧 clear 成纯色 | 屏幕上能看到稳定 60fps 的纯色 |
+| **W3** | 接通 DisplayList | `Rasterizer::Draw(layer_tree)` 跑通，画出红方块 | **V1 + V3 通过** |
+| **W4** | CVDisplayLink 驱动 + 多帧 | 节点 color 动画切换，每帧重画 | **V2 通过**；无掉帧 |
+| **W5** | NSEvent → 点击变色 | 点击 tap_box，颜色翻转 | **V4 通过** |
+| **W6** | 加文字 + 收尾 | SkParagraph 渲染 "Hello PoC"；写 PoC 报告 | 4 项验证全过；文档归档 |
+
+**任意一周延期 > 3 天 → 立即开评估会**：要么调整目标（例如砍掉文字），要么承认底层耦合超预期、阶段 1 需要追加预算。**不要默默拖**——PoC 的全部价值是"早发现"。
+
+### 15.7 验收清单（PoC 完成 = 以下全部 YES）
+
+- [ ] 进程内无 `libdart.so` / `libflutter_engine.dylib` 的 Dart 部分（用 `nm` / `otool -L` 验证）
+- [ ] 不调用 `FlutterEngineRun` / `FlutterEngineInitialize` 任何 embedder C API
+- [ ] 不构造 `shell::Shell` / `shell::Engine` / `RuntimeController` 任何对象
+- [ ] **直接构造 `flutter::Rasterizer`**，能 `Draw` 出 `LayerTree`
+- [ ] macOS 窗口稳定 60fps（用 `CFAbsoluteTimeGetCurrent` 自测帧间隔）
+- [ ] 红方块 / 文字 / 可点击方块全部可见且交互正确
+- [ ] PoC 二进制大小 < 30MB（验证"砍 Dart 省体积"假设方向正确，不是绝对值）
+- [ ] 一份 ≤ 10 页的 **PoC 复盘文档**，明确写出：
+  - Rasterizer / Surface / DisplayList 的真实复用成本
+  - 哪些 engine 头文件需要"复制改造"而非"原样 include"（这是阶段 1 的工作量基线）
+  - 阶段 1 是否调整：保留全部三棵树设计 / 砍掉部分 / 重新评估
+
+### 15.8 PoC 通过之后，阶段 1 第一件事
+
+**不是写 Widget/Element/RenderObject**，而是：
+
+1. 把 PoC 里的 `rasterizer_adapter.h` 抽成正式的 `ui-kernel/platform/rasterizer_host.h`——这是后续所有渲染的入口。
+2. 把 PoC 里的 `metal_surface` 推广到 iOS / Android（GL/Vulkan）平台抽象，确认 §6 的平台层切面可以对齐。
+3. 这两步做完，再开始 §3 的三棵树。**先确保支点稳，再盖楼。**
+
+### 15.9 PoC 失败的两种处理
+
+PoC 失败有两种：
+
+- **"Rasterizer 太耦合 Shell" 类失败**：说明 §2.2 的复用边界要往下挪——可能要绕过 `Rasterizer` 直接用 `flow::CompositorContext` + `Surface`。这意味着阶段 1 多 1–2 月，但方案大方向不变。
+- **"Skia / Impeller 没有 Dart-free 调用路径" 类失败**（极小概率）：说明 engine 的 C++ 底座本身不再独立——这种情况方案需要回到旧文档的"保留 Dart 外壳"渐进路线。**这是 PoC 唯一可能否决整套方案的结果，必须诚实面对。**
+
+> 写在最后：PoC 不是 demo，PoC 是**架构假设的真伪检验**。1.5 个月、6 人周的投入，换的是后面 24 个月不踩坑的资格。**不要省这一步。**
